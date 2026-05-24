@@ -2,123 +2,274 @@
 require_once 'database.php';
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Dimensionamento Solar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <div class="container">
-        <h1>Calculadora de Consumo de Energia</h1>
-        <form method="post" action="calculo.php">
-            <label for="nome">Equipamentos:</label><br>
-            <input type="text" id="nome" name="nome[]"><br><br>
-            <label for="quantidade">Quantidade:</label><br>
-            <input type="number" id="quantidade" name="quantidade[]"><br><br>
-            <label for="potencia">Potência (W):</label><br>
-            <input type="number" id="potencia" name="potencia[]"><br><br>
-            <label for="horas">Horas de uso por dia:</label><br>
-            <input type="number" id="horas" name="horas[]"><br><br>
-            <!--input type="submit_adicionar" value="Adicionar Equipamento" id=btnAdicionar><br><br> Utilizar esse botao apos os testes de apenas 1 item. -->
 
-            <div class="dados_sistema">
-                    <h2>Dados do Sistema</h2>
+    <div class="page">
+        <form method="post" action="calculo.php" id="form-dimensionamento" novalidate>
 
-                    <label for="regiao">Região:</label><br>
-                    <select id="regiao" name="regiao">
-                        <option value="sul">Sul</option>
-                        <option value="norte">Norte</option>
-                        <option value="centro-oeste">Centro-Oeste</option>
-                        <option value="sudeste">Sudeste</option>
-                        <option value="nordeste">Nordeste</option>
-                    </select><br><br>
-                    <label for="modelo_controlador">Modelo do Controlador:</label><br>
-                    <select id="modelo_controlador" name="modelo_controlador">
-                        <option value="">Selecione uma tipo de controle</option>
-                        <?php
-                        $sql = "SELECT DISTINCT tipo_controle FROM controlador_carga";
-                        $result = $conn->query($sql);
+            <header class="page-header">
+                <div>
+                    <h1 class="page-header__title">Dimensionamento Solar</h1>
+                    <p class="page-header__subtitle">Configure os equipamentos e parâmetros do sistema</p>
+                </div>
+                <div class="page-header__actions">
+                    <button type="submit" class="btn btn-primary" id="btnCalcular">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h4"/></svg>
+                        Calcular Sistema
+                    </button>
+                </div>
+            </header>
 
-                        while ($row = $result->fetch_assoc()) {
-                            echo "<option value='{$row['tipo_controle']}'>{$row['tipo_controle']}</option>";
-                        }
-                        ?>
-                    </select><br><br>
-                    <label for="modelo_placa">Modelo da Placa:</label><br>
-                    <select id="modelo_placa" name="modelo_placa">
-                        <option value="">Selecione uma placa</option>
-                        <?php
-                        $sql = "SELECT DISTINCT painel FROM placa_solar";
-                        $result = $conn->query($sql);
+            <div class="grid-two-cols">
 
-                        while ($row = $result->fetch_assoc()) {
-                            echo "<option value='{$row['painel']}'>{$row['painel']}</option>";
-                        }
-                        ?>
-                    </select><br><br>
-                    <label for="tensao_sistema">Tensão do Sistema:</label><br>
-                    <select id="tensao_sistema" name="tensao_sistema">
-                        <option value="">Selecione a tensão do sistema</option>
-                        <option value="12_sistema">12vdc</option>
-                        <option value="24_sistema">24vdc</option>
-                        <option value="48_sistema">48vdc</option>
-                        <option value="127_sistema">127vca</option>
-                        <option value="220_sistema">220vca</option>
-                    </select><br><br>
-                    <label for="modelo_bateria">Modelo da Bateria:</label><br>
-                    <select id="modelo_bateria" name="modelo_bateria">
-                        <option value="">Selecione um modelo de bateria</option>
-                        <?php
-                        $sql = "SELECT DISTINCT bateria_desc FROM bateria";
-                        $result = $conn->query($sql);
+                <!-- Equipamentos -->
+                <section class="card" aria-labelledby="titulo-equipamentos">
+                    <div class="card__header">
+                        <div class="card__icon card__icon--blue" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                        </div>
+                        <h2 class="card__title" id="titulo-equipamentos">Equipamentos do Cliente</h2>
+                    </div>
 
-                        while ($row = $result->fetch_assoc()) {
-                            echo "<option value='{$row['bateria_desc']}'>{$row['bateria_desc']}</option>";
-                        }
-                        ?>
-                    </select><br><br>
-                    <label for="descarga_bateria">Descarregar bateria até:</label><br>
-                    <select id="descarga_bateria" name="descarga_bateria">
-                        <option value="">Selecione a profundidade de descarga</option>
-                        <?php
-                        for ($i = 3; $i <= 9; $i++) {
-                            $valor = $i / 10;
-                            $porcentagem = $i * 10;
-                            echo "<option value='{$valor}'>{$porcentagem}%</option>";
-                        }
-                        ?>
-                    </select><br><br>
-                    <label for="tensao_bateria">Tensão do banco da Bateria:</label><br>
-                    <select id="tensao_bateria" name="tensao_bateria">
-                        <option value="">Selecione a tensão do banco de bateria</option>
-                        <option value="12_bateria">12vdc</option>
-                        <option value="24_bateria">24vdc</option>
-                        <option value="48_bateria">48vdc</option>
-                    </select><br><br>
+                    <div class="equip-list" id="equip-list">
+                        <div class="equip-row">
+                            <div class="form-group">
+                                <label class="form-label">Equipamento</label>
+                                <input type="text" class="form-input" name="nome[]" placeholder="Selecione..." required>
+                                <span class="form-error"></span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Qtd</label>
+                                <input type="number" class="form-input" name="quantidade[]" min="1" step="1" value="1">
+                                <span class="form-error"></span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Potência (W)</label>
+                                <input type="number" class="form-input" name="potencia[]" min="0" step="1" value="100">
+                                <span class="form-error"></span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Horas/dia</label>
+                                <input type="number" class="form-input" name="horas[]" min="0" max="24" step="0.5" value="8">
+                                <span class="form-error"></span>
+                            </div>
+                            <div class="equip-row__total">
+                                <span class="equip-row__total-value">0 Wh</span>
+                            </div>
+                            <button type="button" class="btn-remove" title="Remover" hidden aria-label="Remover equipamento">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    </div>
 
-                    <label for="autonomia">Autonomia desejada (em dias):</label><br>
-                    <input type="number" id="autonomia" name="autonomia"><br><br>
+                    <button type="button" class="btn btn-add" id="btn-adicionar">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        Adicionar Equipamento
+                    </button>
 
-                    <label for="estrutura">Estrutura de Montagem:</label><br>
-                    <select id="estrutura" name="estrutura">
-                        <option value="">Selecione a estrutura de montagem</option>
-                        <?php
-                        $sql = "SELECT DISTINCT estrutura_desc FROM estrutura_solar";
-                        $result = $conn->query($sql);
+                    <div class="summary-stats">
+                        <div class="stat-box">
+                            <div class="stat-box__icon stat-box__icon--blue" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                            </div>
+                            <div class="stat-box__content">
+                                <div class="stat-box__label">Total de equipamentos</div>
+                                <div class="stat-box__value" id="total-equipamentos">1</div>
+                            </div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-box__icon stat-box__icon--orange" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                            </div>
+                            <div class="stat-box__content">
+                                <div class="stat-box__label">Consumo total</div>
+                                <div class="stat-box__value">
+                                    <span id="consumo-total">0</span>
+                                    <span class="stat-box__unit" id="consumo-unidade">Wh/dia</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
-                        while ($row = $result->fetch_assoc()) {
-                            echo "<option value='{$row['estrutura_desc']}'>{$row['estrutura_desc']}</option>";
-                        }
-                        ?>
-                    </select><br><br>
+                <!-- Configuração do sistema -->
+                <section class="card" aria-labelledby="titulo-config">
+                    <div class="card__header">
+                        <div class="card__icon card__icon--orange" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                        </div>
+                        <h2 class="card__title" id="titulo-config">Configuração do Sistema Solar</h2>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="regiao">Região <span class="required">*</span></label>
+                            <select id="regiao" name="regiao" class="form-select" required>
+                                <option value="">Selecione...</option>
+                                <option value="sul">Sul</option>
+                                <option value="norte">Norte</option>
+                                <option value="centro-oeste">Centro-Oeste</option>
+                                <option value="sudeste">Sudeste</option>
+                                <option value="nordeste">Nordeste</option>
+                            </select>
+                            <span class="form-error"></span>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="modelo_controlador">Modelo do Controlador <span class="required">*</span></label>
+                            <select id="modelo_controlador" name="modelo_controlador" class="form-select" required>
+                                <option value="">Selecione...</option>
+                                <?php
+                                $sql = "SELECT DISTINCT tipo_controle FROM controlador_carga";
+                                $result = $conn->query($sql);
+                                while ($row = $result->fetch_assoc()) {
+                                    echo "<option value='{$row['tipo_controle']}'>{$row['tipo_controle']}</option>";
+                                }
+                                ?>
+                            </select>
+                            <span class="form-error"></span>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="modelo_placa">Modelo da Placa Solar <span class="required">*</span></label>
+                            <select id="modelo_placa" name="modelo_placa" class="form-select" required>
+                                <option value="">Selecione...</option>
+                                <?php
+                                $sql = "SELECT DISTINCT painel FROM placa_solar";
+                                $result = $conn->query($sql);
+                                while ($row = $result->fetch_assoc()) {
+                                    echo "<option value='{$row['painel']}'>{$row['painel']}</option>";
+                                }
+                                ?>
+                            </select>
+                            <span class="form-error"></span>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="tensao_sistema">Tensão do Sistema (V) <span class="required">*</span></label>
+                            <select id="tensao_sistema" name="tensao_sistema" class="form-select" required>
+                                <option value="">Selecione...</option>
+                                <option value="12_sistema">12 VDC</option>
+                                <option value="24_sistema">24 VDC</option>
+                                <option value="48_sistema">48 VDC</option>
+                                <option value="127_sistema">127 VCA</option>
+                                <option value="220_sistema">220 VCA</option>
+                            </select>
+                            <span class="form-error"></span>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="modelo_bateria">Modelo da Bateria <span class="required">*</span></label>
+                            <select id="modelo_bateria" name="modelo_bateria" class="form-select" required>
+                                <option value="">Selecione...</option>
+                                <?php
+                                $sql = "SELECT DISTINCT bateria_desc FROM bateria";
+                                $result = $conn->query($sql);
+                                while ($row = $result->fetch_assoc()) {
+                                    echo "<option value='{$row['bateria_desc']}'>{$row['bateria_desc']}</option>";
+                                }
+                                ?>
+                            </select>
+                            <span class="form-error"></span>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="descarga_bateria">Descarga da Bateria (%) <span class="required">*</span></label>
+                            <select id="descarga_bateria" name="descarga_bateria" class="form-select" required>
+                                <option value="">Selecione...</option>
+                                <?php
+                                for ($i = 3; $i <= 9; $i++) {
+                                    $valor = $i / 10;
+                                    $porcentagem = $i * 10;
+                                    $selected = ($porcentagem === 50) ? ' selected' : '';
+                                    echo "<option value='{$valor}'{$selected}>{$porcentagem}%</option>";
+                                }
+                                ?>
+                            </select>
+                            <span class="form-error"></span>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="tensao_bateria">Tensão Banco de Baterias (V) <span class="required">*</span></label>
+                            <select id="tensao_bateria" name="tensao_bateria" class="form-select" required>
+                                <option value="">Selecione...</option>
+                                <option value="12_bateria">12 VDC</option>
+                                <option value="24_bateria">24 VDC</option>
+                                <option value="48_bateria">48 VDC</option>
+                            </select>
+                            <span class="form-error"></span>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="autonomia">Autonomia (dias) <span class="required">*</span></label>
+                            <input type="number" id="autonomia" name="autonomia" class="form-input" min="1" step="1" value="2" required>
+                            <span class="form-error"></span>
+                        </div>
+
+                        <div class="form-group form-grid--full">
+                            <label class="form-label" for="estrutura">Tipo de Estrutura <span class="required">*</span></label>
+                            <select id="estrutura" name="estrutura" class="form-select" required>
+                                <option value="">Selecione...</option>
+                                <?php
+                                $sql = "SELECT DISTINCT estrutura_desc FROM estrutura_solar";
+                                $result = $conn->query($sql);
+                                while ($row = $result->fetch_assoc()) {
+                                    echo "<option value='{$row['estrutura_desc']}'>{$row['estrutura_desc']}</option>";
+                                }
+                                ?>
+                            </select>
+                            <span class="form-error"></span>
+                        </div>
+                    </div>
+                </section>
             </div>
-
-            <input type="submit" value="Calcular" id=btnCalcular>
         </form>
     </div>
+
+    <template id="equip-template">
+        <div class="equip-row">
+            <div class="form-group">
+                <label class="form-label">Equipamento</label>
+                <input type="text" class="form-input" name="nome[]" placeholder="Selecione...">
+                <span class="form-error"></span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Qtd</label>
+                <input type="number" class="form-input" name="quantidade[]" min="1" step="1" value="1">
+                <span class="form-error"></span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Potência (W)</label>
+                <input type="number" class="form-input" name="potencia[]" min="0" step="1" value="100">
+                <span class="form-error"></span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Horas/dia</label>
+                <input type="number" class="form-input" name="horas[]" min="0" max="24" step="0.5" value="8">
+                <span class="form-error"></span>
+            </div>
+            <div class="equip-row__total">
+                <span class="equip-row__total-value">0 Wh</span>
+            </div>
+            <button type="button" class="btn-remove" title="Remover" aria-label="Remover equipamento">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+    </template>
+
+    <script src="app.js"></script>
 </body>
 
 </html>

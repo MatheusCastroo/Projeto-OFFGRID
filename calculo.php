@@ -18,6 +18,7 @@ $autonomia_dias = $_POST['autonomia'];
 $estrutura = $_POST['estrutura'];
 
 $equipamentos = [];
+
 for ($i = 0; $i < count($nomes); $i++) {
     $equipamentos[] = [
         'nome' => $nomes[$i],
@@ -31,12 +32,16 @@ $total_consumo_diario = 0;
 $total_potencia = 0;
 
 foreach ($equipamentos as $equipamento) {
+    $nome = $equipamento['nome'];
     $quantidade = $equipamento['quantidade'] ?? 0;
     $potencia = $equipamento['potencia_w'] ?? 0;
     $horas = $equipamento['tempo_hora_dia'] ?? 0;
 
-    $total_consumo_diario += $quantidade * $potencia * $horas;
-    $total_potencia += $quantidade * $potencia;
+    $consumo = $quantidade * $potencia * $horas;
+    $potencia_total_item = $quantidade * $potencia;
+
+    $total_consumo_diario += $consumo;
+    $total_potencia += $potencia_total_item;
 }
 
 $total_consumo_diario_corrigido = $total_consumo_diario / 0.95;
@@ -49,7 +54,7 @@ $regioes = [
     'nordeste' => 5.6,
 ];
 
-$regiaoEscolhida = $regiao ?: 'sul';
+$regiaoEscolhida = 'sul';
 $incidencia_irradiacao_solar = $regioes[$regiaoEscolhida] ?? 0;
 
 $potencia_placa = 560;
@@ -59,32 +64,57 @@ $quantidade_placa = 1;
 $quantidade_string = 1;
 
 $potencia_sistema = $potencia_placa * $quantidade_placa;
+
 $tensao_banco_bateria = 24;
 $profundidade_descarga = 0.8;
+$autonomia_dias = 2;
+
 $corrente_bateria = 7;
 $tensao_bateria = 12;
 
 $quantidade_placa_mppt = ceil($total_consumo_diario_corrigido / ($potencia_placa * $incidencia_irradiacao_solar));
+
+$potencia_gerada = $potencia_placa * $incidencia_irradiacao_solar * $quantidade_placa_mppt;
+
 $quantidade_placa_pwm = ceil((($total_consumo_diario_corrigido / (($tensao_banco_bateria * 1.2) * $incidencia_irradiacao_solar))) / $corrente_placa);
-$quantidade_placas = ($modelo_controlador === 'mppt') ? $quantidade_placa_mppt : $quantidade_placa_pwm;
 
 $numero_placa_serie = ceil(($tensao_banco_bateria * 1.2) / $tensao_placa);
+
 $corrente_consumida_diariamente = $total_consumo_diario_corrigido / $tensao_banco_bateria;
+
 $corrente_necessario_banco_bateria = ($corrente_consumida_diariamente / $profundidade_descarga) * $autonomia_dias;
 
+$corrente_gerada_sistema_diario_mppt = ($potencia_sistema * $incidencia_irradiacao_solar);
+
+$corrente_gerada_sistema_diario_pwm = (($tensao_banco_bateria * 1.2) * ($corrente_placa * $quantidade_string)) * $incidencia_irradiacao_solar;
+
+$quantidade_baterias = ceil($corrente_necessario_banco_bateria / $corrente_bateria);
+
 $corrente_consumida_equipamentos = $total_potencia / $tensao_banco_bateria;
+
 $corrente_gerado_placas = $corrente_placa * $numero_placa_serie;
 
 $quantidade_bateria = 0;
+
 if ($tensao_banco_bateria >= $tensao_bateria) {
     $quantidade_bateria = ceil($corrente_necessario_banco_bateria / $corrente_bateria) * ($tensao_banco_bateria / $tensao_bateria);
 }
 
 $corrrente_banco_bateria = ($quantidade_bateria / ($tensao_banco_bateria / $tensao_bateria)) * $corrente_bateria;
+
 $corrente_carregamento_bateria = $corrrente_banco_bateria * 0.1;
+
 $corrente_controlador_carga = ceil(max($corrente_consumida_equipamentos, $corrente_gerado_placas, $corrente_carregamento_bateria));
+
 $tensao_entrada_painel = $tensao_placa * $numero_placa_serie;
 
+if ($modelo_controlador == 'mppt') {
+    $quantidade_placas = $quantidade_placa_mppt;
+} else {
+    $quantidade_placas = $quantidade_placa_pwm;
+}
+
+// PROCV(Projeto!$H$6; Bateria!I4:J9; 2; FALSO)
 $tensao_saida_carga = null;
 $sql = 'SELECT valor FROM tensoes WHERE valor = ? LIMIT 1';
 $stmt = $conn->prepare($sql);
@@ -98,6 +128,49 @@ if ($stmt) {
     $stmt->close();
 }
 
+$corrente_saida = $total_potencia / $tensao_banco_bateria;
+
+$inversor_escolhido = null;
+$quantidade_inversor = 0;
+
+$sql = '
+    SELECT *
+    FROM inversor
+    WHERE tensao_entrada = ?
+      AND tensao_saida = ?
+      AND condicao = 0
+    ORDER BY potencia_trabalho ASC
+';
+
+$stmt = $conn->prepare($sql);
+
+if ($stmt) {
+    $tensao_saida_carga_num = (float) $tensao_saida_carga;
+    $stmt->bind_param('dd', $tensao_banco_bateria, $tensao_saida_carga_num);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    while ($row = $result->fetch_assoc()) {
+
+        // REGRA DA PLANILHA:
+        // pega o menor inversor que atende a potência
+        if ($row['potencia_trabalho'] >= $total_potencia) {
+
+            $inversor_escolhido = $row;
+
+            // calcula quantidade
+            $quantidade_inversor = ceil(
+                $total_potencia / $row['potencia_trabalho']
+            );
+
+            break;
+        }
+    }
+
+    $stmt->close();
+}
+
+// =========== Resultados (somente exibição) =============
 $resultados = [];
 
 $stmt = $conn->prepare('SELECT sku, painel FROM placa_solar WHERE painel = ? LIMIT 1');
@@ -126,6 +199,14 @@ if ($row = $result->fetch_assoc()) {
 }
 $stmt->close();
 
+if ($inversor_escolhido) {
+    $resultados[] = [
+        'descricao' => $inversor_escolhido['inversor'],
+        'quantidade' => $quantidade_inversor,
+        'sku' => $inversor_escolhido['sku'],
+    ];
+}
+
 $sql = 'SELECT * FROM controlador_carga';
 $result = $conn->query($sql);
 if ($result) {
@@ -133,7 +214,7 @@ if ($result) {
         $compativel = (
             $row['corrente_nominal'] >= $corrente_controlador_carga
             && $row['tensao_circuito_aberto'] >= $tensao_entrada_painel
-            && $modelo_controlador === $row['tipo_controle']
+            && $modelo_controlador == $row['tipo_controle']
             && (
                 $row['tensao_1_vdc'] == $tensao_banco_bateria
                 || $row['tensao_2_vdc']

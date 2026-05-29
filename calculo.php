@@ -154,17 +154,25 @@ if ($stmt) {
 
         // REGRA DA PLANILHA:
         // pega o menor inversor que atende a potência
-        if ($row['potencia_trabalho'] >= $total_potencia) {
+       $potencia_minima = $total_potencia * 1.3;
 
-            $inversor_escolhido = $row;
+if ($row['potencia_trabalho'] >= $potencia_minima) {
 
-            // calcula quantidade
-            $quantidade_inversor = ceil(
-                $total_potencia / $row['potencia_trabalho']
-            );
+    $inversor_escolhido = $row;
 
-            break;
-        }
+    // calcula quantidade corretamente
+    $quantidade_inversor = ceil(
+        $total_potencia / $row['potencia_trabalho']
+    );
+
+    // cálculo de uso
+    $uso = ($total_potencia / $row['potencia_trabalho']) * 100;
+
+    // você pode usar isso depois no front se quiser
+    $inversor_escolhido['uso_percentual'] = round($uso, 2);
+
+    break;
+}
     }
 
     $stmt->close();

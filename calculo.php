@@ -154,17 +154,25 @@ if ($stmt) {
 
         // REGRA DA PLANILHA:
         // pega o menor inversor que atende a potência
-        if ($row['potencia_trabalho'] >= $total_potencia) {
+       $potencia_minima = $total_potencia * 1.3;
 
-            $inversor_escolhido = $row;
+if ($row['potencia_trabalho'] >= $potencia_minima) {
 
-            // calcula quantidade
-            $quantidade_inversor = ceil(
-                $total_potencia / $row['potencia_trabalho']
-            );
+    $inversor_escolhido = $row;
 
-            break;
-        }
+    // calcula quantidade corretamente
+    $quantidade_inversor = ceil(
+        $total_potencia / $row['potencia_trabalho']
+    );
+
+    // cálculo de uso
+    $uso = ($total_potencia / $row['potencia_trabalho']) * 100;
+
+    // você pode usar isso depois no front se quiser
+    $inversor_escolhido['uso_percentual'] = round($uso, 2);
+
+    break;
+}
     }
 
     $stmt->close();
@@ -208,31 +216,41 @@ if ($inversor_escolhido) {
 }
 
 $sql = 'SELECT * FROM controlador_carga';
-$result = $conn->query($sql);
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $compativel = (
-            $row['corrente_nominal'] >= $corrente_controlador_carga
-            && $row['tensao_circuito_aberto'] >= $tensao_entrada_painel
-            && $modelo_controlador == $row['tipo_controle']
-            && (
-                $row['tensao_1_vdc'] == $tensao_banco_bateria
-                || $row['tensao_2_vdc']
-                || $tensao_banco_bateria
-                || $row['tensao_3_vdc'] == $tensao_banco_bateria
-            )
-        );
-
-        if ($compativel) {
-            $resultados[] = [
-                'descricao' => $row['controlador'],
-                'quantidade' => $row['quantidade'],
-                'sku' => $row['sku'],
-            ];
-            break;
-        }
-    }
+$stmt = $conn->prepare($sql);
+$stmt->execute();
+$result = $stmt->get_result();
+if ($row = $result->fetch_assoc()){
+    $resultados[] = [
+       'sku' => $row['sku'],
+       'controlador_desc' => $row['controlador'],
+       'corrente_nominal' => $row['corrente_nominal'],
+       'tensao_circuito_aberto' => $row['tensao_circuito_aberto'],
+       'tensao_1_vdc' => $row['tensao_1_vdc'],
+       'tensao_2_vdc' => $row['tensao_2_vdc'],
+       'tensao_3_vdc' => $row['tensao_3_vdc'],
+       'tipo_controle' => $row['tipo_controle'],
+       'quantidade' => $row['quantidade'],
+       'condicao' => $row['condicao'],
+    ];
 }
+if (
+    $row['corrente_nominal'] >= $corrente_controlador_carga &&
+    $row['tensao_circuito_aberto'] >= $tensao_entrada_painel &&
+    $row['tipo_controle'] == $modelo_controlador &&
+    (
+        $row['tensao_1_vdc'] == $tensao_banco_bateria ||
+        $row['tensao_2_vdc'] == $tensao_banco_bateria ||
+        $row['tensao_3_vdc'] == $tensao_banco_bateria
+    ) 
+)
+     { 
+    $resultados[] = [
+        'descricao' => $row['controlador'],
+        'quantidade' => 1,
+        'sku' => $row['sku'],
+    ];
+}
+
 
 ?>
 <!DOCTYPE html>

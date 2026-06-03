@@ -133,49 +133,43 @@ $corrente_saida = $total_potencia / $tensao_banco_bateria;
 $inversor_escolhido = null;
 $quantidade_inversor = 0;
 
-$sql = '
-    SELECT *
-    FROM inversor
-    WHERE tensao_entrada = ?
-      AND tensao_saida = ?
-      AND condicao = 0
-    ORDER BY potencia_trabalho ASC
-';
+$tensao_entrada_inversor = (int) filter_var($_POST['tensao_bateria'] ?? '', FILTER_SANITIZE_NUMBER_INT);
+$tensao_saida_inversor = match ($tensao_sistema) {
+    '127_sistema' => 127,
+    '220_sistema' => 220,
+    default => null,
+};
 
-$stmt = $conn->prepare($sql);
+if ($tensao_saida_inversor && $tensao_entrada_inversor) {
+    $sql = '
+        SELECT *
+        FROM inversor
+        WHERE tensao_entrada = ?
+          AND tensao_saida = ?
+          AND condicao = 0
+        ORDER BY potencia_trabalho ASC
+    ';
 
-if ($stmt) {
-    $tensao_saida_carga_num = (float) $tensao_saida_carga;
-    $stmt->bind_param('dd', $tensao_banco_bateria, $tensao_saida_carga_num);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    $stmt = $conn->prepare($sql);
 
-    while ($row = $result->fetch_assoc()) {
+    if ($stmt) {
+        $stmt->bind_param('dd', $tensao_entrada_inversor, $tensao_saida_inversor);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
-        // REGRA DA PLANILHA:
-        // pega o menor inversor que atende a potência
-       $potencia_minima = $total_potencia * 1.3;
+        while ($row = $result->fetch_assoc()) {
+            $potencia_minima = $total_potencia * 1.3;
 
-if ($row['potencia_trabalho'] >= $potencia_minima) {
+            if ($row['potencia_trabalho'] >= $potencia_minima) {
+                $inversor_escolhido = $row;
+                $quantidade_inversor = (int) ceil($total_potencia / $row['potencia_trabalho']);
+                $inversor_escolhido['uso_percentual'] = round(($total_potencia / $row['potencia_trabalho']) * 100, 2);
+                break;
+            }
+        }
 
-    $inversor_escolhido = $row;
-
-    // calcula quantidade corretamente
-    $quantidade_inversor = ceil(
-        $total_potencia / $row['potencia_trabalho']
-    );
-
-    // cálculo de uso
-    $uso = ($total_potencia / $row['potencia_trabalho']) * 100;
-
-    // você pode usar isso depois no front se quiser
-    $inversor_escolhido['uso_percentual'] = round($uso, 2);
-
-    break;
-}
+        $stmt->close();
     }
-
-    $stmt->close();
 }
 
 // =========== Resultados (somente exibição) =============
@@ -209,9 +203,9 @@ $stmt->close();
 
 if ($inversor_escolhido) {
     $resultados[] = [
-        'descricao' => $inversor_escolhido['inversor'],
-        'quantidade' => $quantidade_inversor,
         'sku' => $inversor_escolhido['sku'],
+        'inversor_desc' => $inversor_escolhido['inversor'],
+        'quantidade' => $quantidade_inversor ?: 1,
     ];
 }
 
@@ -246,8 +240,50 @@ if (
      { 
     $resultados[] = [
         'descricao' => $row['controlador'],
-        'quantidade' => 1,
+        'quantidade' => $row['quantidade'],
         'sku' => $row['sku'],
+    ];
+}
+
+$sql = 'SELECT * FROM estrutura_solar WHERE estrutura_desc = ? LIMIT 1';
+$stmt = $conn->prepare($sql);
+$stmt->bind_param('s', $estrutura);
+$stmt->execute();
+$result = $stmt->get_result();
+if ($row = $result->fetch_assoc()){
+    $resultados[] = [
+        'sku' => $row['sku'],
+        'estrutura' => $row['estrutura_desc'],
+        'quantidade' => $row['quantidade'],
+    ];
+}
+if ($estrutura == $row['estrutura_desc']) {
+    $resultados[] = [
+        'descricao' => $row['estrutura_desc'],
+        'quantidade' => $row['quantidade'],
+        'sku' => $row['sku'],
+    ];
+}
+
+$sql = 'SELECT * FROM disjuntor';
+$stmt = $conn->prepare($sql);
+$stmt->execute();   
+$result = $stmt->get_result();
+if ($row = $result->fetch_assoc()) {
+    $resultados[] = [
+        'sku' => $row['sku'],
+        'disjuntor_desc' => $row['descricao'],
+        'tipo' => $row['tipo'],
+        'corrente_nominal' => $row['corrente_nominal'],
+    ];
+}
+if ($row['corrente_nominal'] >= $corrente_saida) {
+    $resultados[] = [
+        'sku' => $row['sku'],
+        'disjuntor_desc' => $row['descricao'],
+        'tipo' => $row['tipo'],
+        'quantidade' => 1,
+
     ];
 }
 
@@ -259,38 +295,80 @@ if (
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Resultado do Dimensionamento</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="page">
         <header class="page-header">
-            <h1 class="page-header__title">Componentes do Sistema</h1>
+            <div>
+                <h1 class="page-header__title">Componentes do Sistema</h1>
+                <p class="page-header__subtitle">Lista de materiais dimensionados</p>
+            </div>
+            <div class="page-header__actions">
+                <a href="index.php" class="btn btn-secondary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    Voltar
+                </a>
+            </div>
         </header>
 
-        <?php if (empty($resultados)): ?>
-            <p>Nenhum componente encontrado.</p>
-        <?php else: ?>
-            <table class="result-table">
-                <thead>
-                    <tr>
-                        <th>Componente</th>
-                        <th>Quantidade</th>
-                        <th>SKU</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($resultados as $item): ?>
-                        <tr>
-                            <td><?= htmlspecialchars($item['descricao']) ?></td>
-                            <td><?= (int) $item['quantidade'] ?></td>
-                            <td><?= (int) $item['sku'] ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
+        <section class="card">
+            <?php
+            $componentes = [];
+            foreach ($resultados as $item) {
+                $descricao = $item['descricao'] ?? $item['inversor_desc'] ?? $item['disjuntor_desc'] ?? null;
+                if (!$descricao) {
+                    continue;
+                }
+                $componentes[] = array_merge($item, ['descricao' => $descricao]);
+            }
 
-        <p><a href="index.php">Voltar</a></p>
+            // Evita duplicata quando o mesmo SKU já foi adicionado com descricao
+            $unicos = [];
+            foreach ($componentes as $item) {
+                $sku = $item['sku'] ?? uniqid('item_', true);
+                $unicos[$sku] = $item;
+            }
+
+            if ($inversor_escolhido && !isset($unicos[$inversor_escolhido['sku']])) {
+                $unicos[$inversor_escolhido['sku']] = [
+                    'descricao' => $inversor_escolhido['inversor'],
+                    'quantidade' => $quantidade_inversor ?: 1,
+                    'sku' => $inversor_escolhido['sku'],
+                ];
+            }
+
+            $componentes = array_values($unicos);
+            ?>
+
+            <?php if (empty($componentes)): ?>
+                <p class="result-empty">Nenhum componente encontrado.</p>
+            <?php else: ?>
+                <div class="result-table-wrap">
+                    <table class="result-table">
+                        <thead>
+                            <tr>
+                                <th>Componente</th>
+                                <th class="result-table__col-num">Quantidade</th>
+                                <th class="result-table__col-num">SKU</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($componentes as $item): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($item['descricao']) ?></td>
+                                    <td class="result-table__col-num"><?= (int) ($item['quantidade'] ?? 1) ?></td>
+                                    <td class="result-table__col-num"><?= htmlspecialchars((string) ($item['sku'] ?? '—')) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </section>
     </div>
 </body>
 </html>

@@ -428,13 +428,29 @@ body {
 }
 
 /* ===== Resultado (calculo.php) ===== */
+.btn-secondary {
+    padding: 0.6rem 1.25rem;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    text-decoration: none;
+}
+
+.btn-secondary:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: var(--blue-light);
+}
+
+.result-table-wrap {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
 .result-table {
     width: 100%;
     border-collapse: collapse;
-    background: var(--bg-card);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-md);
-    overflow: hidden;
 }
 
 .result-table th,
@@ -455,6 +471,22 @@ body {
     border-bottom: none;
 }
 
-.page > p {
-    margin-top: 1.25rem;
+.result-table tbody tr:hover td {
+    background: var(--bg-muted);
+}
+
+.result-table__col-num {
+    width: 120px;
+    text-align: center;
+}
+
+.result-table th.result-table__col-num {
+    text-align: center;
+}
+
+.result-empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 2rem 1rem;
+    font-size: 0.9rem;
 }

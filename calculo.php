@@ -18,30 +18,30 @@ $autonomia_dias = $_POST['autonomia'];
 $estrutura = $_POST['estrutura'];
 
 $equipamentos = [];
-
-for ($i = 0; $i < count($nomes); $i++) {
-    $equipamentos[] = [
-        'nome' => $nomes[$i],
-        'quantidade' => $quantidades[$i],
-        'potencia_w' => $potencias[$i],
-        'tempo_hora_dia' => $horas[$i],
-    ];
-}
-
 $total_consumo_diario = 0;
 $total_potencia = 0;
 
-foreach ($equipamentos as $equipamento) {
-    $nome = $equipamento['nome'];
-    $quantidade = $equipamento['quantidade'] ?? 0;
-    $potencia = $equipamento['potencia_w'] ?? 0;
-    $horas = $equipamento['tempo_hora_dia'] ?? 0;
+for ($i = 0; $i < count($nomes); $i++) {
+    $nome = trim((string) ($nomes[$i] ?? ''));
+    if ($nome === '') {
+        continue;
+    }
 
-    $consumo = $quantidade * $potencia * $horas;
-    $potencia_total_item = $quantidade * $potencia;
+    $quantidade = (float) ($quantidades[$i] ?? 0);
+    $potencia_w = (float) ($potencias[$i] ?? 0);
+    $horas_dia = (float) ($horas[$i] ?? 0);
+    $potencia_equipamento_w = $quantidade * $potencia_w;
 
-    $total_consumo_diario += $consumo;
-    $total_potencia += $potencia_total_item;
+    $equipamentos[] = [
+        'nome' => $nome,
+        'quantidade' => $quantidade,
+        'potencia_w' => $potencia_w,
+        'potencia_equipamento_w' => $potencia_equipamento_w,
+        'tempo_hora_dia' => $horas_dia,
+    ];
+
+    $total_potencia += $potencia_equipamento_w;
+    $total_consumo_diario += $potencia_equipamento_w * $horas_dia;
 }
 
 $rendimento_sistema = 0.95;

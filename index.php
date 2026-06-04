@@ -66,7 +66,7 @@ require_once 'database.php';
                                 <span class="form-error"></span>
                             </div>
                             <div class="equip-row__total">
-                                <span class="equip-row__total-value">0 Wh</span>
+                                <span class="equip-row__total-value">0 W</span>
                             </div>
                             <button type="button" class="btn-remove" title="Remover" hidden aria-label="Remover equipamento">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -87,6 +87,18 @@ require_once 'database.php';
                             <div class="stat-box__content">
                                 <div class="stat-box__label">Total de equipamentos</div>
                                 <div class="stat-box__value" id="total-equipamentos">1</div>
+                            </div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-box__icon stat-box__icon--blue" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                            </div>
+                            <div class="stat-box__content">
+                                <div class="stat-box__label">Potência total</div>
+                                <div class="stat-box__value">
+                                    <span id="potencia-total">0</span>
+                                    <span class="stat-box__unit">W</span>
+                                </div>
                             </div>
                         </div>
                         <div class="stat-box">
@@ -261,7 +273,7 @@ require_once 'database.php';
                 <span class="form-error"></span>
             </div>
             <div class="equip-row__total">
-                <span class="equip-row__total-value">0 Wh</span>
+                <span class="equip-row__total-value">0 W</span>
             </div>
             <button type="button" class="btn-remove" title="Remover" aria-label="Remover equipamento">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>

@@ -19,33 +19,53 @@
         return { value: Math.round(wh).toString(), unit: 'Wh/dia' };
     }
 
+    function potenciaEquipamentoW(qtd, pot) {
+        return qtd * pot;
+    }
+
     function updateRowTotal(row) {
         const qtd = parseNum(row.querySelector('[name="quantidade[]"]')?.value);
         const pot = parseNum(row.querySelector('[name="potencia[]"]')?.value);
-        const hrs = parseNum(row.querySelector('[name="horas[]"]')?.value);
-        const wh = qtd * pot * hrs;
+        const potenciaW = potenciaEquipamentoW(qtd, pot);
         const el = row.querySelector('.equip-row__total-value');
         if (el) {
-            el.textContent = wh >= 1000 ? (wh / 1000).toFixed(2) + ' kWh' : Math.round(wh) + ' Wh';
+            el.textContent = potenciaW >= 1000
+                ? (potenciaW / 1000).toFixed(2) + ' kW'
+                : Math.round(potenciaW) + ' W';
         }
     }
 
     function updateSummary() {
         const rows = equipList.querySelectorAll('.equip-row');
         let consumo = 0;
+        let potenciaTotal = 0;
 
         rows.forEach((row) => {
             updateRowTotal(row);
             const qtd = parseNum(row.querySelector('[name="quantidade[]"]')?.value);
             const pot = parseNum(row.querySelector('[name="potencia[]"]')?.value);
             const hrs = parseNum(row.querySelector('[name="horas[]"]')?.value);
-            consumo += qtd * pot * hrs;
+            const potenciaW = potenciaEquipamentoW(qtd, pot);
+
+            potenciaTotal += potenciaW;
+            consumo += potenciaW * hrs;
 
             const removeBtn = row.querySelector('.btn-remove');
             if (removeBtn) removeBtn.hidden = rows.length <= 1;
         });
 
         totalEquipamentos.textContent = rows.length;
+
+        const potenciaTotalEl = document.getElementById('potencia-total');
+        if (potenciaTotalEl) {
+            potenciaTotalEl.textContent = potenciaTotal >= 1000
+                ? (potenciaTotal / 1000).toFixed(2)
+                : Math.round(potenciaTotal).toString();
+            const potenciaUnidade = potenciaTotalEl.nextElementSibling;
+            if (potenciaUnidade?.classList.contains('stat-box__unit')) {
+                potenciaUnidade.textContent = potenciaTotal >= 1000 ? 'kW' : 'W';
+            }
+        }
 
         const formatted = formatWh(consumo);
         consumoTotal.textContent = formatted.value;

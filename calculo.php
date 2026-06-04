@@ -44,7 +44,7 @@ foreach ($equipamentos as $equipamento) {
     $total_potencia += $potencia_total_item;
 }
 
-$total_consumo_diario_corrigido = $total_consumo_diario / 0.95;
+$rendimento_sistema = 0.95;
 
 $regioes = [
     'sul' => 4.2,
@@ -54,23 +54,46 @@ $regioes = [
     'nordeste' => 5.6,
 ];
 
-$regiaoEscolhida = 'sul';
-$incidencia_irradiacao_solar = $regioes[$regiaoEscolhida] ?? 0;
+$incidencia_irradiacao_solar = $regioes[$regiao] ?? 0;
 
-$potencia_placa = 560;
-$tensao_placa = 50.6;
-$corrente_placa = 14.06;
+$potencia_placa = 0;
+$tensao_placa = 0;
+$corrente_placa = 0;
 $quantidade_placa = 1;
 $quantidade_string = 1;
 
+$stmt = $conn->prepare('SELECT potencia_max, tensao_circuito, corrente_curto FROM placa_solar WHERE painel = ? LIMIT 1');
+$stmt->bind_param('s', $modelo_placa);
+$stmt->execute();
+$result = $stmt->get_result();
+if ($row = $result->fetch_assoc()) {
+    $potencia_placa = (float) $row['potencia_max'];
+    $tensao_placa = (float) $row['tensao_circuito'];
+    $corrente_placa = (float) $row['corrente_curto'];
+}
+$stmt->close();
+
 $potencia_sistema = $potencia_placa * $quantidade_placa;
 
-$tensao_banco_bateria = 24;
-$profundidade_descarga = 0.8;
-$autonomia_dias = 2;
+$tensao_banco_bateria = (int) filter_var($tensao_bateria, FILTER_SANITIZE_NUMBER_INT);
+$profundidade_descarga = (float) $descarga_bateria;
+$autonomia_dias = (int) $autonomia_dias;
 
-$corrente_bateria = 7;
-$tensao_bateria = 12;
+$corrente_bateria = 0;
+$tensao_celula_bateria = 0;
+
+$stmt = $conn->prepare('SELECT tensao_nominal_vdc, capacidade_bateria, rendimento_bateria FROM bateria WHERE bateria_desc = ? LIMIT 1');
+$stmt->bind_param('s', $modelo_bateria);
+$stmt->execute();
+$result = $stmt->get_result();
+if ($row = $result->fetch_assoc()) {
+    $tensao_celula_bateria = (float) $row['tensao_nominal_vdc'];
+    $corrente_bateria = (float) $row['capacidade_bateria'];
+    $rendimento_sistema = (float) $row['rendimento_bateria'] / 100;
+}
+$stmt->close();
+
+$total_consumo_diario_corrigido = $total_consumo_diario / $rendimento_sistema;
 
 $quantidade_placa_mppt = ceil($total_consumo_diario_corrigido / ($potencia_placa * $incidencia_irradiacao_solar));
 
@@ -96,11 +119,14 @@ $corrente_gerado_placas = $corrente_placa * $numero_placa_serie;
 
 $quantidade_bateria = 0;
 
-if ($tensao_banco_bateria >= $tensao_bateria) {
-    $quantidade_bateria = ceil($corrente_necessario_banco_bateria / $corrente_bateria) * ($tensao_banco_bateria / $tensao_bateria);
+if ($tensao_banco_bateria >= $tensao_celula_bateria && $corrente_bateria > 0) {
+    $quantidade_bateria = ceil($corrente_necessario_banco_bateria / $corrente_bateria) * ($tensao_banco_bateria / $tensao_celula_bateria);
 }
 
-$corrrente_banco_bateria = ($quantidade_bateria / ($tensao_banco_bateria / $tensao_bateria)) * $corrente_bateria;
+$corrrente_banco_bateria = 0;
+if ($tensao_celula_bateria > 0 && $quantidade_bateria > 0) {
+    $corrrente_banco_bateria = ($quantidade_bateria / ($tensao_banco_bateria / $tensao_celula_bateria)) * $corrente_bateria;
+}
 
 $corrente_carregamento_bateria = $corrrente_banco_bateria * 0.1;
 
@@ -108,7 +134,7 @@ $corrente_controlador_carga = ceil(max($corrente_consumida_equipamentos, $corren
 
 $tensao_entrada_painel = $tensao_placa * $numero_placa_serie;
 
-if ($modelo_controlador == 'mppt') {
+if (strtolower($modelo_controlador) === 'mppt') {
     $quantidade_placas = $quantidade_placa_mppt;
 } else {
     $quantidade_placas = $quantidade_placa_pwm;
@@ -209,82 +235,85 @@ if ($inversor_escolhido) {
     ];
 }
 
-$sql = 'SELECT * FROM controlador_carga';
+$sql = '
+    SELECT *
+    FROM controlador_carga
+    WHERE tipo_controle = ?
+      AND condicao = 0
+    ORDER BY corrente_nominal ASC
+';
 $stmt = $conn->prepare($sql);
-$stmt->execute();
-$result = $stmt->get_result();
-if ($row = $result->fetch_assoc()){
-    $resultados[] = [
-       'sku' => $row['sku'],
-       'controlador_desc' => $row['controlador'],
-       'corrente_nominal' => $row['corrente_nominal'],
-       'tensao_circuito_aberto' => $row['tensao_circuito_aberto'],
-       'tensao_1_vdc' => $row['tensao_1_vdc'],
-       'tensao_2_vdc' => $row['tensao_2_vdc'],
-       'tensao_3_vdc' => $row['tensao_3_vdc'],
-       'tipo_controle' => $row['tipo_controle'],
-       'quantidade' => $row['quantidade'],
-       'condicao' => $row['condicao'],
-    ];
-}
-if (
-    $row['corrente_nominal'] >= $corrente_controlador_carga &&
-    $row['tensao_circuito_aberto'] >= $tensao_entrada_painel &&
-    $row['tipo_controle'] == $modelo_controlador &&
-    (
-        $row['tensao_1_vdc'] == $tensao_banco_bateria ||
-        $row['tensao_2_vdc'] == $tensao_banco_bateria ||
-        $row['tensao_3_vdc'] == $tensao_banco_bateria
-    ) 
-)
-     { 
-    $resultados[] = [
-        'descricao' => $row['controlador'],
-        'quantidade' => $row['quantidade'],
-        'sku' => $row['sku'],
-    ];
+if ($stmt) {
+    $stmt->bind_param('s', $modelo_controlador);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    while ($row = $result->fetch_assoc()) {
+        $tensao_compativel = (
+            (float) $row['tensao_1_vdc'] === (float) $tensao_banco_bateria ||
+            (float) $row['tensao_2_vdc'] === (float) $tensao_banco_bateria ||
+            (float) $row['tensao_3_vdc'] === (float) $tensao_banco_bateria
+        );
+
+        if (
+            $row['corrente_nominal'] >= $corrente_controlador_carga &&
+            $row['tensao_circuito_aberto'] >= $tensao_entrada_painel &&
+            $tensao_compativel &&
+            strtolower($row['tipo_controle']) === strtolower($modelo_controlador)
+        ) {
+            $resultados[] = [
+                'descricao' => $row['controlador'],
+                'quantidade' => (int) $row['quantidade'],
+                'sku' => $row['sku'],
+            ];
+            break;
+        }
+    }
+
+    $stmt->close();
 }
 
-$sql = 'SELECT * FROM estrutura_solar WHERE estrutura_desc = ? LIMIT 1';
-$stmt = $conn->prepare($sql);
+$stmt = $conn->prepare('SELECT sku, estrutura_desc, quantidade FROM estrutura_solar WHERE estrutura_desc = ? LIMIT 1');
 $stmt->bind_param('s', $estrutura);
 $stmt->execute();
 $result = $stmt->get_result();
-if ($row = $result->fetch_assoc()){
-    $resultados[] = [
-        'sku' => $row['sku'],
-        'estrutura' => $row['estrutura_desc'],
-        'quantidade' => $row['quantidade'],
-    ];
-}
-if ($estrutura == $row['estrutura_desc']) {
-    $resultados[] = [
-        'descricao' => $row['estrutura_desc'],
-        'quantidade' => $row['quantidade'],
-        'sku' => $row['sku'],
-    ];
-}
-
-$sql = 'SELECT * FROM disjuntor';
-$stmt = $conn->prepare($sql);
-$stmt->execute();   
-$result = $stmt->get_result();
 if ($row = $result->fetch_assoc()) {
-    $resultados[] = [
-        'sku' => $row['sku'],
-        'disjuntor_desc' => $row['descricao'],
-        'tipo' => $row['tipo'],
-        'corrente_nominal' => $row['corrente_nominal'],
-    ];
-}
-if ($row['corrente_nominal'] >= $corrente_saida) {
-    $resultados[] = [
-        'sku' => $row['sku'],
-        'disjuntor_desc' => $row['descricao'],
-        'tipo' => $row['tipo'],
-        'quantidade' => 1,
+    $placas_por_estrutura = max(1, (int) $row['quantidade']);
+    $quantidade_estrutura = $row['quantidade'] > 0
+        ? (int) ceil($quantidade_placas / $placas_por_estrutura)
+        : 0;
 
-    ];
+    if ($quantidade_estrutura > 0) {
+        $resultados[] = [
+            'descricao' => $row['estrutura_desc'],
+            'quantidade' => $quantidade_estrutura,
+            'sku' => $row['sku'],
+        ];
+    }
+}
+$stmt->close();
+
+$tipo_disjuntor = in_array($tensao_sistema, ['127_sistema', '220_sistema'], true) ? 'AC' : 'DC';
+
+$sql = 'SELECT * FROM disjuntor WHERE tipo = ? ORDER BY corrente_nominal ASC';
+$stmt = $conn->prepare($sql);
+if ($stmt) {
+    $stmt->bind_param('s', $tipo_disjuntor);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    while ($row = $result->fetch_assoc()) {
+        if ($row['corrente_nominal'] >= $corrente_saida) {
+            $resultados[] = [
+                'descricao' => $row['descricao'],
+                'quantidade' => 1,
+                'sku' => $row['sku'],
+            ];
+            break;
+        }
+    }
+
+    $stmt->close();
 }
 
 

@@ -23,6 +23,16 @@
         return qtd * pot;
     }
 
+    function updateScrollState() {
+        if (!equipList) return;
+
+        if (equipList.childElementCount > 3) {
+            equipList.classList.add('scroll-active');
+        } else {
+            equipList.classList.remove('scroll-active');
+        }
+    }
+
     function updateRowTotal(row) {
         const qtd = parseNum(row.querySelector('[name="quantidade[]"]')?.value);
         const pot = parseNum(row.querySelector('[name="potencia[]"]')?.value);
@@ -71,12 +81,15 @@
         consumoTotal.textContent = formatted.value;
         const unidadeEl = document.getElementById('consumo-unidade');
         if (unidadeEl) unidadeEl.textContent = formatted.unit;
+
+        updateScrollState();
     }
 
     function bindRowEvents(row) {
-        row.querySelectorAll('input').forEach((input) => {
-            input.addEventListener('input', updateSummary);
-            input.addEventListener('blur', () => validateField(input));
+        row.querySelectorAll('input, select').forEach((field) => {
+            field.addEventListener('input', updateSummary);
+            field.addEventListener('change', updateSummary);
+            field.addEventListener('blur', () => validateField(field));
         });
 
         row.querySelector('.btn-remove')?.addEventListener('click', () => {
@@ -94,6 +107,11 @@
         bindRowEvents(row);
         equipList.appendChild(clone);
         updateSummary();
+
+        if (equipList.classList.contains('scroll-active')) {
+            equipList.scrollTop = equipList.scrollHeight;
+        }
+
         row.querySelector('[name="nome[]"]')?.focus();
     }
 

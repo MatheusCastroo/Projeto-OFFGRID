@@ -122,15 +122,37 @@
 
         if (field.hasAttribute('required') && !String(field.value).trim()) {
             message = 'Campo obrigatório.';
-        } else if (field.type === 'number' && field.value !== '') {
-            const min = field.min !== '' ? parseFloat(field.min) : null;
+        } else if (field.type === 'number') {
             const val = parseNum(field.value);
-            if (min !== null && val < min) message = 'Valor mínimo: ' + min + '.';
+            const min = field.min !== '' ? parseFloat(field.min) : null;
+
+            if (field.value === '' || !Number.isFinite(val)) {
+                if (field.name === 'potencia[]' || field.name === 'horas[]') {
+                    message = 'Informe um valor maior que 0.';
+                }
+            } else if (field.name === 'potencia[]' && val <= 0) {
+                message = 'Informe um valor maior que 0.';
+            } else if (field.name === 'horas[]' && val <= 0) {
+                message = 'Informe um valor maior que 0.';
+            } else if (min !== null && val < min) {
+                message = 'Valor mínimo: ' + min + '.';
+            }
         }
 
         field.classList.toggle('is-invalid', !!message);
         if (errorEl) errorEl.textContent = message;
         return !message;
+    }
+
+    function validateEquipRow(row) {
+        const nome = row.querySelector('[name="nome[]"]')?.value.trim();
+        if (!nome) return true;
+
+        const potField = row.querySelector('[name="potencia[]"]');
+        const hrsField = row.querySelector('[name="horas[]"]');
+        const potOk = validateField(potField);
+        const hrsOk = validateField(hrsField);
+        return potOk && hrsOk;
     }
 
     function validateForm() {
@@ -142,7 +164,11 @@
         const rows = equipList.querySelectorAll('.equip-row');
         let hasEquip = false;
         rows.forEach((row) => {
-            if (row.querySelector('[name="nome[]"]')?.value.trim()) hasEquip = true;
+            const nome = row.querySelector('[name="nome[]"]')?.value.trim();
+            if (nome) {
+                hasEquip = true;
+                if (!validateEquipRow(row)) valid = false;
+            }
         });
 
         if (!hasEquip) {
@@ -158,9 +184,60 @@
         return valid;
     }
 
+    function restoreFormData(data) {
+        if (!data || !form || !equipList) return;
+
+        const nomes = Array.isArray(data.nome) ? data.nome : [data.nome || ''];
+        const quantidades = Array.isArray(data.quantidade) ? data.quantidade : [data.quantidade || '1'];
+        const potencias = Array.isArray(data.potencia) ? data.potencia : [data.potencia || ''];
+        const horasArr = Array.isArray(data.horas) ? data.horas : [data.horas || ''];
+        const template = document.getElementById('equip-template');
+
+        if (!template) return;
+
+        equipList.innerHTML = '';
+
+        const count = Math.max(nomes.length, quantidades.length, potencias.length, horasArr.length, 1);
+        for (let i = 0; i < count; i++) {
+            const clone = template.content.cloneNode(true);
+            const row = clone.querySelector('.equip-row');
+
+            row.querySelector('[name="nome[]"]').value = nomes[i] || '';
+            row.querySelector('[name="quantidade[]"]').value = quantidades[i] ?? 1;
+            row.querySelector('[name="potencia[]"]').value = potencias[i] ?? '';
+            row.querySelector('[name="horas[]"]').value = horasArr[i] ?? '';
+
+            bindRowEvents(row);
+            equipList.appendChild(clone);
+        }
+
+        [
+            'regiao',
+            'modelo_controlador',
+            'modelo_placa',
+            'tensao_sistema',
+            'modelo_bateria',
+            'descarga_bateria',
+            'tensao_bateria',
+            'autonomia',
+            'estrutura',
+        ].forEach((name) => {
+            if (data[name] === undefined) return;
+            const field = form.querySelector(`[name="${name}"]`);
+            if (field) field.value = data[name];
+        });
+
+        updateSummary();
+    }
+
     btnAdd?.addEventListener('click', createEquipRow);
-    equipList.querySelectorAll('.equip-row').forEach(bindRowEvents);
-    updateSummary();
+
+    if (window.__formRestore && typeof window.__formRestore === 'object') {
+        restoreFormData(window.__formRestore);
+    } else {
+        equipList.querySelectorAll('.equip-row').forEach(bindRowEvents);
+        updateSummary();
+    }
 
     form?.addEventListener('submit', (e) => {
         if (!validateForm()) {

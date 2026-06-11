@@ -1,6 +1,27 @@
 <?php
 
+session_start();
 require_once 'database.php';
+
+$formData = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['restaurar_dimensionamento'])) {
+    $formData = $_POST;
+    unset($formData['restaurar_dimensionamento']);
+    $_SESSION['dimensionamento_form'] = $formData;
+    header('Location: index.php?editar=1');
+    exit;
+}
+
+if (!empty($_GET['editar']) && !empty($_SESSION['dimensionamento_form'])) {
+    $formData = $_SESSION['dimensionamento_form'];
+}
+
+$formRestoreJson = $formData !== null
+    ? json_encode(
+        $formData,
+        JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE
+    )
+    : null;
 
 ?>
 
@@ -61,24 +82,6 @@ require_once 'database.php';
                         <p class="page-header__subtitle">Configure os equipamentos e parâmetros do sistema</p>
 
                     </div>
-
-                </div>
-
-                <div class="page-header__actions">
-
-                    <button type="submit" class="btn btn-primary" id="btnCalcular">
-
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-
-                            <rect x="4" y="2" width="16" height="20" rx="2"/>
-
-                            <path d="M8 6h8M8 10h8M8 14h4"/>
-
-                        </svg>
-
-                        Calcular Sistema
-
-                    </button>
 
                 </div>
 
@@ -153,7 +156,7 @@ require_once 'database.php';
 
                                     <label class="form-label">Potência (W)</label>
 
-                                    <input type="number" class="input form-input" name="potencia[]" min="0" step="1" value="100">
+                                    <input type="number" class="input form-input" name="potencia[]" min="1" step="1" placeholder="0">
 
                                     <span class="form-error"></span>
 
@@ -163,7 +166,7 @@ require_once 'database.php';
 
                                     <label class="form-label">Horas/dia</label>
 
-                                    <input type="number" class="input form-input" name="horas[]" min="0" max="24" step="0.5" value="8">
+                                    <input type="number" class="input form-input" name="horas[]" min="0.5" max="24" step="0.5" placeholder="0">
 
                                     <span class="form-error"></span>
 
@@ -173,7 +176,7 @@ require_once 'database.php';
 
                                     <span class="form-label">Total</span>
 
-                                    <span class="equip-row__total-value">100 W</span>
+                                    <span class="equip-row__total-value">0 W</span>
 
                                 </div>
 
@@ -241,7 +244,7 @@ require_once 'database.php';
 
                                 <div class="stat-box__value">
 
-                                    <span id="potencia-total">100</span>
+                                    <span id="potencia-total">0</span>
 
                                     <span class="stat-box__unit">W</span>
 
@@ -265,7 +268,7 @@ require_once 'database.php';
 
                                 <div class="stat-box__value">
 
-                                    <span id="consumo-total">800</span>
+                                    <span id="consumo-total">0</span>
 
                                     <span class="stat-box__unit" id="consumo-unidade">Wh/dia</span>
 
@@ -569,23 +572,28 @@ require_once 'database.php';
 
                     </div>
 
+                    <div class="card__footer card__footer--submit">
+
+                        <button type="submit" class="btn btn-primary" id="btnCalcular">
+
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+
+                                <rect x="4" y="2" width="16" height="20" rx="2"/>
+
+                                <path d="M8 6h8M8 10h8M8 14h4"/>
+
+                            </svg>
+
+                            Calcular Sistema
+
+                        </button>
+
+                    </div>
+
                 </section>
 
             </div>
 
-
-
-            <p class="page-footer-note">
-
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-
-                    <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
-
-                </svg>
-
-                Cálculos baseados nas melhores práticas do setor.
-
-            </p>
 
 
 
@@ -603,7 +611,7 @@ require_once 'database.php';
 
                 <label class="form-label">Equipamento</label>
 
-                <input type="text" class="input form-input" name="nome[]" list="equip-sugestoes" placeholder="Ex: Geladeira, TV, Microondas...">
+                <input type="text" class="input form-input" name="nome[]" list="equip-sugestoes" placeholder="Ex: Geladeira">
 
                 <span class="form-error"></span>
 
@@ -623,7 +631,7 @@ require_once 'database.php';
 
                 <label class="form-label">Potência (W)</label>
 
-                <input type="number" class="input form-input" name="potencia[]" min="0" step="1" value="100">
+                <input type="number" class="input form-input" name="potencia[]" min="1" step="1" placeholder="0">
 
                 <span class="form-error"></span>
 
@@ -633,7 +641,7 @@ require_once 'database.php';
 
                 <label class="form-label">Horas/dia</label>
 
-                <input type="number" class="input form-input" name="horas[]" min="0" max="24" step="0.5" value="8">
+                <input type="number" class="input form-input" name="horas[]" min="0.5" max="24" step="0.5" placeholder="0">
 
                 <span class="form-error"></span>
 
@@ -643,7 +651,7 @@ require_once 'database.php';
 
                 <span class="form-label">Total</span>
 
-                <span class="equip-row__total-value">100 W</span>
+                <span class="equip-row__total-value">0 W</span>
 
             </div>
 
@@ -659,6 +667,18 @@ require_once 'database.php';
 
 
 
+    <script id="form-restore-data" type="application/json"><?= $formRestoreJson ?? 'null' ?></script>
+    <script>
+        (function () {
+            const el = document.getElementById('form-restore-data');
+            if (!el) return;
+            try {
+                window.__formRestore = JSON.parse(el.textContent);
+            } catch (e) {
+                window.__formRestore = null;
+            }
+        })();
+    </script>
     <script src="app.js"></script>
 
 </body>

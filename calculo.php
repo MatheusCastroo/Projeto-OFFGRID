@@ -1,6 +1,14 @@
 <?php
 
+session_start();
 require_once 'database.php';
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: index.php');
+    exit;
+}
+
+$_SESSION['dimensionamento_form'] = $_POST;
 
 $nomes = $_POST['nome'];
 $quantidades = $_POST['quantidade'];
@@ -345,11 +353,6 @@ if ($controlador_escolhido && $controlador_escolhido['quantidade'] > 0) {
             'quantidade' => (int) $controlador_escolhido['quantidade'],
             'sku' => $disjuntor_dc_escolhido['sku'],
         ];
-    } else {
-        $resultados[] = [
-            'descricao' => 'Indisponivel',
-            'quantidade' => (int) $controlador_escolhido['quantidade'],
-        ];
     }
 }
 
@@ -406,6 +409,17 @@ $inversor_gerado_w = $inversor_escolhido ? (float) $inversor_escolhido['potencia
 
 $controlador_necessario = $corrente_controlador_carga;
 $controlador_gerado = $controlador_escolhido ? (float) $controlador_escolhido['corrente_nominal'] : 0;
+
+function componenteEstaDisponivel(array $item): bool
+{
+    $descricao = trim((string) ($item['descricao'] ?? $item['inversor_desc'] ?? $item['disjuntor_desc'] ?? ''));
+
+    if ($descricao === '') {
+        return false;
+    }
+
+    return !preg_match('/^indispon[ií]vel$/ui', $descricao);
+}
 
 function detectarCategoriaComponente(string $descricao): string
 {
@@ -488,6 +502,29 @@ $categoriasLabel = [
                 </div>
             </div>
             <div class="page-header__actions">
+                <form method="post" action="index.php" class="form-restaurar-dimensionamento">
+                    <?php
+                    $formSalvo = $_SESSION['dimensionamento_form'] ?? [];
+                    foreach ($formSalvo as $campo => $valor):
+                        if (is_array($valor)):
+                            foreach ($valor as $item):
+                    ?>
+                                <input type="hidden" name="<?= htmlspecialchars((string) $campo, ENT_QUOTES, 'UTF-8') ?>[]" value="<?= htmlspecialchars((string) $item, ENT_QUOTES, 'UTF-8') ?>">
+                    <?php
+                            endforeach;
+                        else:
+                    ?>
+                            <input type="hidden" name="<?= htmlspecialchars((string) $campo, ENT_QUOTES, 'UTF-8') ?>" value="<?= htmlspecialchars((string) $valor, ENT_QUOTES, 'UTF-8') ?>">
+                    <?php
+                        endif;
+                    endforeach;
+                    ?>
+                    <input type="hidden" name="restaurar_dimensionamento" value="1">
+                    <button type="submit" class="btn btn-secondary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        Editar informações
+                    </button>
+                </form>
                 <a href="index.php" class="btn btn-outline">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                     Voltar
@@ -498,6 +535,10 @@ $categoriasLabel = [
         <?php
         $componentes = [];
         foreach ($resultados as $item) {
+            if (!componenteEstaDisponivel($item)) {
+                continue;
+            }
+
             $descricao = $item['descricao'] ?? $item['inversor_desc'] ?? $item['disjuntor_desc'] ?? null;
             if (!$descricao) {
                 continue;
@@ -567,9 +608,12 @@ $categoriasLabel = [
 
                 <div class="componentes-lista">
                     <div class="componentes-lista__header" aria-hidden="true">
-                        <span>Componente</span>
-                        <span>Quantidade</span>
-                        <span>SKU</span>
+                        <div class="componentes-lista__col componentes-lista__col--info">
+                            <span class="componentes-lista__header-spacer" aria-hidden="true"></span>
+                            <span>Componente</span>
+                        </div>
+                        <span class="componentes-lista__col componentes-lista__col--quantidade">Quantidade</span>
+                        <span class="componentes-lista__col componentes-lista__col--sku">SKU</span>
                     </div>
 
                     <div class="componentes-lista__body" id="lista-componentes">
@@ -594,7 +638,7 @@ $categoriasLabel = [
                                         <?php elseif ($categoria === 'disjuntor'): ?>
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                         <?php elseif ($categoria === 'inversor'): ?>
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 12H6M6 12l4-4M6 12l4 4"/></svg>
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 12h2"/><path d="M11 12c1.5-2 2.5-2.5 4-1.5s2.5 2.5 4 1.5"/><path d="M17 10v4"/></svg>
                                         <?php elseif ($categoria === 'estrutura'): ?>
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M5 20V8l7-5 7 5v12"/></svg>
                                         <?php else: ?>
@@ -644,10 +688,13 @@ $categoriasLabel = [
 
                 <div class="componentes-lista componentes-lista--resumo">
                     <div class="componentes-lista__header" aria-hidden="true">
-                        <span>Componente</span>
-                        <span>Necessário</span>
-                        <span>Gerada</span>
-                        <span>Unidade</span>
+                        <div class="componentes-lista__col componentes-lista__col--info">
+                            <span class="componentes-lista__header-spacer" aria-hidden="true"></span>
+                            <span>Componente</span>
+                        </div>
+                        <span class="componentes-lista__col componentes-lista__col--valor">Necessário</span>
+                        <span class="componentes-lista__col componentes-lista__col--valor">Gerada</span>
+                        <span class="componentes-lista__col componentes-lista__col--unidade">Unidade</span>
                     </div>
 
                     <div class="componentes-lista__body">
@@ -671,7 +718,7 @@ $categoriasLabel = [
                             </div>
                         </article>
 
-                        <article class="componente-item resumo-item resumo-item--bateria">
+                        <article class="componente-item resumo-item resumo-item--bateria componente-item--bateria">
                             <div class="componente-item__info">
                                 <div class="componente-item__icon" aria-hidden="true">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2"/><path d="M6 11v2M10 11v2M14 11v2"/></svg>
@@ -691,10 +738,10 @@ $categoriasLabel = [
                             </div>
                         </article>
 
-                        <article class="componente-item resumo-item resumo-item--inversor">
+                        <article class="componente-item resumo-item resumo-item--inversor componente-item--inversor">
                             <div class="componente-item__info">
                                 <div class="componente-item__icon" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16M4 12c2-4 6-6 8-6s6 2 8 6M4 12c2 4 6 6 8 6s6-2 8-6"/></svg>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 12h2"/><path d="M11 12c1.5-2 2.5-2.5 4-1.5s2.5 2.5 4 1.5"/><path d="M17 10v4"/></svg>
                                 </div>
                                 <div class="componente-item__texto">
                                     <h3 class="componente-nome">Inversor</h3>
@@ -711,7 +758,7 @@ $categoriasLabel = [
                             </div>
                         </article>
 
-                        <article class="componente-item resumo-item resumo-item--controlador">
+                        <article class="componente-item resumo-item resumo-item--controlador componente-item--controlador">
                             <div class="componente-item__info">
                                 <div class="componente-item__icon" aria-hidden="true">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>

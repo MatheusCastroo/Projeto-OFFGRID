@@ -891,16 +891,109 @@ body {
     box-shadow: var(--shadow-card);
 }
 
-.componentes-resumo {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: var(--gap-grid);
-    margin-bottom: var(--space-xl);
+.resumo-dimensionamento {
+    margin-top: var(--space-xl);
 }
 
-.componentes-resumo .stat-box {
-    background: var(--bg-card);
-    box-shadow: var(--shadow-card);
+.resumo-dimensionamento__intro {
+    margin-bottom: var(--space-lg);
+}
+
+.resumo-dimensionamento__title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+
+.resumo-dimensionamento__subtitle {
+    margin-top: 4px;
+    font-size: var(--text-label);
+    color: var(--text-secondary);
+}
+
+.componentes-lista--resumo .componentes-lista__header,
+.resumo-item {
+    grid-template-columns: 1.4fr 0.45fr 0.45fr 0.35fr;
+}
+
+.componentes-lista--resumo .componentes-lista__header span:nth-child(2),
+.componentes-lista--resumo .componentes-lista__header span:nth-child(3),
+.componentes-lista--resumo .componentes-lista__header span:nth-child(4) {
+    text-align: center;
+}
+
+.resumo-item {
+    cursor: default;
+}
+
+.resumo-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    border-color: var(--border-hover);
+}
+
+.resumo-item__valor,
+.resumo-item__unidade {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.resumo-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: var(--text-body);
+    min-width: 76px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.resumo-unidade {
+    display: inline-block;
+    background: #F1F5F9;
+    color: #475569;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: var(--text-label);
+    min-width: 52px;
+    text-align: center;
+}
+
+.resumo-item--energia .componente-item__icon {
+    background: #DBEAFE;
+    color: #2563EB;
+}
+
+.resumo-item--energia .resumo-badge--necessario {
+    background: #DBEAFE;
+    color: #1D4ED8;
+}
+
+.resumo-item--energia .resumo-badge--gerada {
+    background: #D1FAE5;
+    color: #047857;
+}
+
+.resumo-item--bateria .resumo-badge--necessario,
+.resumo-item--bateria .resumo-badge--gerada {
+    background: #D1FAE5;
+    color: #047857;
+}
+
+.resumo-item--inversor .resumo-badge--necessario,
+.resumo-item--inversor .resumo-badge--gerada {
+    background: #E0E7FF;
+    color: #4338CA;
+}
+
+.resumo-item--controlador .resumo-badge--necessario,
+.resumo-item--controlador .resumo-badge--gerada {
+    background: #EDE9FE;
+    color: #6D28D9;
 }
 
 .stat-box__hint {
@@ -1263,12 +1356,6 @@ body {
     font-size: var(--text-body);
 }
 
-@media (max-width: 1024px) {
-    .componentes-resumo {
-        grid-template-columns: 1fr;
-    }
-}
-
 @media (max-width: 768px) {
     .componentes-toolbar {
         flex-direction: column;
@@ -1295,6 +1382,11 @@ body {
     }
 
     .componente-item__sku {
+        justify-content: flex-start;
+    }
+
+    .resumo-item__valor,
+    .resumo-item__unidade {
         justify-content: flex-start;
     }
 

@@ -118,7 +118,13 @@ $quantidade_baterias = ceil($corrente_necessario_banco_bateria / $corrente_bater
 
 $corrente_consumida_equipamentos = $total_potencia / $tensao_banco_bateria;
 
-$corrente_gerado_placas = $corrente_placa * $numero_placa_serie;
+$isMppt = strtolower($modelo_controlador) === 'mppt';
+$quantidade_placas = $isMppt ? $quantidade_placa_mppt : $quantidade_placa_pwm;
+
+$strings_paralelas = $numero_placa_serie > 0
+    ? (int) ceil($quantidade_placas / $numero_placa_serie)
+    : $quantidade_placas;
+$corrente_gerado_placas = $corrente_placa * $strings_paralelas;
 
 $quantidade_bateria = 0;
 
@@ -137,12 +143,6 @@ $corrente_controlador_carga = ceil(max($corrente_consumida_equipamentos, $corren
 
 $tensao_entrada_painel = $tensao_placa * $numero_placa_serie;
 
-if (strtolower($modelo_controlador) === 'mppt') {
-    $quantidade_placas = $quantidade_placa_mppt;
-} else {
-    $quantidade_placas = $quantidade_placa_pwm;
-}
-
 // PROCV(Projeto!$H$6; Bateria!I4:J9; 2; FALSO)
 $tensao_saida_carga = null;
 $sql = 'SELECT valor FROM tensoes WHERE valor = ? LIMIT 1';
@@ -156,8 +156,6 @@ if ($stmt) {
     }
     $stmt->close();
 }
-
-$corrente_saida = $total_potencia / $tensao_banco_bateria;
 
 $inversor_escolhido = null;
 $quantidade_inversor = 0;
@@ -238,42 +236,57 @@ if ($inversor_escolhido) {
     ];
 }
 
+$controlador_escolhido = null;
+
 $sql = '
-    SELECT *
+    SELECT sku, controlador, corrente_nominal, tensao_circuito_aberto,
+           tensao_1_vdc, tensao_2_vdc, tensao_3_vdc, tipo_controle, quantidade
     FROM controlador_carga
     WHERE tipo_controle = ?
       AND condicao = 0
-    ORDER BY corrente_nominal ASC
+      AND corrente_nominal >= ?
+      AND tensao_circuito_aberto >= ?
+    ORDER BY quantidade ASC, sku ASC
 ';
+
 $stmt = $conn->prepare($sql);
+
 if ($stmt) {
-    $stmt->bind_param('s', $modelo_controlador);
+    $stmt->bind_param('sdd', $modelo_controlador, $corrente_controlador_carga, $tensao_entrada_painel);
     $stmt->execute();
     $result = $stmt->get_result();
 
     while ($row = $result->fetch_assoc()) {
-        $tensao_compativel = (
-            (float) $row['tensao_1_vdc'] === (float) $tensao_banco_bateria ||
-            (float) $row['tensao_2_vdc'] === (float) $tensao_banco_bateria ||
-            (float) $row['tensao_3_vdc'] === (float) $tensao_banco_bateria
-        );
+        $compativel_banco = false;
 
-        if (
-            $row['corrente_nominal'] >= $corrente_controlador_carga &&
-            $row['tensao_circuito_aberto'] >= $tensao_entrada_painel &&
-            $tensao_compativel &&
-            strtolower($row['tipo_controle']) === strtolower($modelo_controlador)
-        ) {
-            $resultados[] = [
-                'descricao' => $row['controlador'],
-                'quantidade' => (int) $row['quantidade'],
-                'sku' => $row['sku'],
-            ];
-            break;
+        foreach (['tensao_1_vdc', 'tensao_2_vdc', 'tensao_3_vdc'] as $campo) {
+            if ($row[$campo] === null || $row[$campo] === '') {
+                continue;
+            }
+
+            if ((int) (float) $row[$campo] === $tensao_banco_bateria) {
+                $compativel_banco = true;
+                break;
+            }
         }
+
+        if (!$compativel_banco) {
+            continue;
+        }
+
+        $controlador_escolhido = $row;
+        break;
     }
 
     $stmt->close();
+}
+
+if ($controlador_escolhido) {
+    $resultados[] = [
+        'descricao' => $controlador_escolhido['controlador'],
+        'quantidade' => (int) $controlador_escolhido['quantidade'],
+        'sku' => $controlador_escolhido['sku'],
+    ];
 }
 
 $stmt = $conn->prepare('SELECT sku, estrutura_desc, quantidade FROM estrutura_solar WHERE estrutura_desc = ? LIMIT 1');
@@ -296,28 +309,103 @@ if ($row = $result->fetch_assoc()) {
 }
 $stmt->close();
 
-$tipo_disjuntor = in_array($tensao_sistema, ['127_sistema', '220_sistema'], true) ? 'AC' : 'DC';
+$disjuntor_dc_escolhido = null;
+$disjuntor_ac_escolhido = null;
 
-$sql = 'SELECT * FROM disjuntor WHERE tipo = ? ORDER BY corrente_nominal ASC';
-$stmt = $conn->prepare($sql);
-if ($stmt) {
-    $stmt->bind_param('s', $tipo_disjuntor);
-    $stmt->execute();
-    $result = $stmt->get_result();
+if ($controlador_escolhido && $controlador_escolhido['quantidade'] > 0) {
+    $corrente_controlador_unidade = $controlador_escolhido['corrente_nominal']
+        / $controlador_escolhido['quantidade'];
 
-    while ($row = $result->fetch_assoc()) {
-        if ($row['corrente_nominal'] >= $corrente_saida) {
-            $resultados[] = [
-                'descricao' => $row['descricao'],
-                'quantidade' => 1,
-                'sku' => $row['sku'],
-            ];
-            break;
+    $sql = '
+        SELECT sku, descricao, corrente_nominal
+        FROM disjuntor
+        WHERE tipo = ?
+          AND corrente_nominal > ?
+        ORDER BY corrente_nominal ASC, sku ASC
+    ';
+
+    $tipo_disjuntor_dc = 'DC';
+    $stmt = $conn->prepare($sql);
+
+    if ($stmt) {
+        $stmt->bind_param('sd', $tipo_disjuntor_dc, $corrente_controlador_unidade);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($row = $result->fetch_assoc()) {
+            $disjuntor_dc_escolhido = $row;
         }
+
+        $stmt->close();
     }
 
-    $stmt->close();
+    if ($disjuntor_dc_escolhido) {
+        $resultados[] = [
+            'descricao' => $disjuntor_dc_escolhido['descricao'],
+            'quantidade' => (int) $controlador_escolhido['quantidade'],
+            'sku' => $disjuntor_dc_escolhido['sku'],
+        ];
+    } else {
+        $resultados[] = [
+            'descricao' => 'Indisponivel',
+            'quantidade' => (int) $controlador_escolhido['quantidade'],
+        ];
+    }
 }
+
+$corrente_disjuntor_ac = $tensao_saida_inversor > 0
+    ? $total_potencia / $tensao_saida_inversor
+    : 0;
+
+if ($corrente_disjuntor_ac > 0) {
+    $sql = '
+        SELECT sku, descricao, corrente_nominal
+        FROM disjuntor
+        WHERE tipo = ?
+          AND corrente_nominal >= ?
+        ORDER BY corrente_nominal ASC, sku ASC
+    ';
+
+    $tipo_disjuntor_ac = 'AC';
+    $stmt = $conn->prepare($sql);
+
+    if ($stmt) {
+        $stmt->bind_param('sd', $tipo_disjuntor_ac, $corrente_disjuntor_ac);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($row = $result->fetch_assoc()) {
+            $disjuntor_ac_escolhido = $row;
+        }
+
+        $stmt->close();
+    }
+
+    if ($disjuntor_ac_escolhido) {
+        $resultados[] = [
+            'descricao' => $disjuntor_ac_escolhido['descricao'],
+            'quantidade' => 1,
+            'sku' => $disjuntor_ac_escolhido['sku'],
+        ];
+    }
+}
+
+$energia_necessaria_kw = $total_consumo_diario_corrigido / 1000;
+
+if ($isMppt) {
+    $energia_gerada_kw = ($potencia_placa * $incidencia_irradiacao_solar * $quantidade_placa_mppt) / 1000;
+} else {
+    $energia_gerada_kw = ((($tensao_banco_bateria * 1.2) * ($corrente_placa * $strings_paralelas)) * $incidencia_irradiacao_solar) / 1000;
+}
+
+$bateria_necessaria_ah = $corrente_consumida_diariamente;
+$bateria_gerada_ah = $corrrente_banco_bateria;
+
+$inversor_necessario_w = $total_potencia;
+$inversor_gerado_w = $inversor_escolhido ? (float) $inversor_escolhido['potencia_trabalho'] : 0;
+
+$controlador_necessario = $corrente_controlador_carga;
+$controlador_gerado = $controlador_escolhido ? (float) $controlador_escolhido['corrente_nominal'] : 0;
 
 function detectarCategoriaComponente(string $descricao): string
 {
@@ -372,98 +460,6 @@ $categoriasLabel = [
     'estrutura' => 'Estrutura',
     'outro' => 'Componente',
 ];
-
-// DEBUG — remover depois
-function debugValor(mixed $value): string
-{
-    if (is_float($value)) {
-        return number_format($value, 2, '.', '');
-    }
-    if (is_int($value)) {
-        return (string) $value;
-    }
-
-    return var_export($value, true);
-}
-
-echo '<pre style="background:#1a1a2e;color:#eee;padding:1.25rem;margin:1rem;border-radius:8px;font-family:Consolas,monospace;font-size:13px;line-height:1.7;overflow-x:auto;">';
-echo "<strong style=\"color:#7dd3fc;\">=== DEBUG — Variáveis do cálculo ===</strong>\n\n";
-
-echo "<span style=\"color:#fbbf24;\">--- Entrada (POST) ---</span>\n";
-echo 'regiao: ' . debugValor($regiao) . "\n";
-echo 'modelo_controlador: ' . debugValor($modelo_controlador) . "\n";
-echo 'modelo_placa: ' . debugValor($modelo_placa) . "\n";
-echo 'tensao_sistema: ' . debugValor($tensao_sistema) . "\n";
-echo 'modelo_bateria: ' . debugValor($modelo_bateria) . "\n";
-echo 'descarga_bateria: ' . debugValor($descarga_bateria) . "\n";
-echo 'tensao_bateria: ' . debugValor($tensao_bateria) . "\n";
-echo 'autonomia_dias: ' . debugValor($autonomia_dias) . "\n";
-echo 'estrutura: ' . debugValor($estrutura) . "\n\n";
-
-echo "<span style=\"color:#fbbf24;\">--- Equipamentos ---</span>\n";
-echo 'equipamentos: ' . debugValor($equipamentos) . "\n";
-echo 'total_consumo_diario: ' . debugValor($total_consumo_diario) . "\n";
-echo 'total_potencia: ' . debugValor($total_potencia) . "\n\n";
-
-echo "<span style=\"color:#fbbf24;\">--- Irradiação / rendimento ---</span>\n";
-echo 'rendimento_sistema: ' . debugValor($rendimento_sistema) . "\n";
-echo 'rendimento_bateria: ' . debugValor($rendimento_bateria) . "\n";
-echo 'incidencia_irradiacao_solar: ' . debugValor($incidencia_irradiacao_solar) . "\n\n";
-
-echo "<span style=\"color:#fbbf24;\">--- Placa solar ---</span>\n";
-echo 'potencia_placa: ' . debugValor($potencia_placa) . "\n";
-echo 'tensao_placa: ' . debugValor($tensao_placa) . "\n";
-echo 'corrente_placa: ' . debugValor($corrente_placa) . "\n";
-echo 'quantidade_placa: ' . debugValor($quantidade_placa) . "\n";
-echo 'quantidade_string: ' . debugValor($quantidade_string) . "\n";
-echo 'potencia_sistema: ' . debugValor($potencia_sistema) . "\n\n";
-
-echo "<span style=\"color:#fbbf24;\">--- Bateria ---</span>\n";
-echo 'tensao_banco_bateria: ' . debugValor($tensao_banco_bateria) . "\n";
-echo 'profundidade_descarga: ' . debugValor($profundidade_descarga) . "\n";
-echo 'corrente_bateria: ' . debugValor($corrente_bateria) . "\n";
-echo 'tensao_celula_bateria: ' . debugValor($tensao_celula_bateria) . "\n\n";
-
-echo "<span style=\"color:#fbbf24;\">--- Consumo e dimensionamento ---</span>\n";
-echo 'total_consumo_diario_corrigido: ' . debugValor($total_consumo_diario_corrigido) . "\n";
-echo 'quantidade_placa_mppt: ' . debugValor($quantidade_placa_mppt) . "\n";
-echo 'potencia_gerada: ' . debugValor($potencia_gerada) . "\n";
-echo 'quantidade_placa_pwm: ' . debugValor($quantidade_placa_pwm) . "\n";
-echo 'numero_placa_serie: ' . debugValor($numero_placa_serie) . "\n";
-echo 'corrente_consumida_diariamente: ' . debugValor($corrente_consumida_diariamente) . "\n";
-echo 'corrente_necessario_banco_bateria: ' . debugValor($corrente_necessario_banco_bateria) . "\n";
-echo 'corrente_gerada_sistema_diario_mppt: ' . debugValor($corrente_gerada_sistema_diario_mppt) . "\n";
-echo 'corrente_gerada_sistema_diario_pwm: ' . debugValor($corrente_gerada_sistema_diario_pwm) . "\n";
-echo 'quantidade_baterias: ' . debugValor($quantidade_baterias) . "\n";
-echo 'corrente_consumida_equipamentos: ' . debugValor($corrente_consumida_equipamentos) . "\n";
-echo 'corrente_gerado_placas: ' . debugValor($corrente_gerado_placas) . "\n";
-echo 'quantidade_bateria: ' . debugValor($quantidade_bateria) . "\n";
-echo 'corrrente_banco_bateria: ' . debugValor($corrrente_banco_bateria) . "\n";
-echo 'corrente_carregamento_bateria: ' . debugValor($corrente_carregamento_bateria) . "\n";
-echo 'corrente_controlador_carga: ' . debugValor($corrente_controlador_carga) . "\n";
-echo 'tensao_entrada_painel: ' . debugValor($tensao_entrada_painel) . "\n";
-echo 'quantidade_placas: ' . debugValor($quantidade_placas) . "\n\n";
-
-echo "<span style=\"color:#fbbf24;\">--- Saída / inversor ---</span>\n";
-echo 'tensao_saida_carga: ' . debugValor($tensao_saida_carga) . "\n";
-echo 'corrente_saida: ' . debugValor($corrente_saida) . "\n";
-echo 'tensao_entrada_inversor: ' . debugValor($tensao_entrada_inversor) . "\n";
-echo 'tensao_saida_inversor: ' . debugValor($tensao_saida_inversor) . "\n";
-echo 'inversor_escolhido: ' . debugValor($inversor_escolhido) . "\n";
-echo 'quantidade_inversor: ' . debugValor($quantidade_inversor) . "\n\n";
-
-echo "<span style=\"color:#fbbf24;\">--- Resultados finais ---</span>\n";
-echo 'resultados: ' . debugValor($resultados) . "\n";
-echo 'tipo_disjuntor: ' . debugValor($tipo_disjuntor) . "\n";
-if (isset($placas_por_estrutura)) {
-    echo 'placas_por_estrutura: ' . debugValor($placas_por_estrutura) . "\n";
-}
-if (isset($quantidade_estrutura)) {
-    echo 'quantidade_estrutura: ' . debugValor($quantidade_estrutura) . "\n";
-}
-
-echo "\n<strong style=\"color:#7dd3fc;\">=== FIM DEBUG ===</strong>";
-echo '</pre>';
 
 ?>
 <!DOCTYPE html>
@@ -536,8 +532,6 @@ echo '</pre>';
 
         $componentes = array_values($unicos);
         $totalItens = count($componentes);
-        $totalComponentes = array_sum(array_map(fn ($item) => (int) ($item['quantidade'] ?? 1), $componentes));
-        $categoriasUnicas = count(array_unique(array_column($componentes, 'categoria')));
         ?>
 
         <?php if (empty($componentes)): ?>
@@ -545,46 +539,6 @@ echo '</pre>';
                 <p class="result-empty">Nenhum componente encontrado.</p>
             </section>
         <?php else: ?>
-            <div class="componentes-resumo">
-                <div class="stat-box">
-                    <div class="stat-box__icon stat-box__icon--blue" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                        </svg>
-                    </div>
-                    <div class="stat-box__content">
-                        <div class="stat-box__label">Total de itens</div>
-                        <div class="stat-box__value"><?= $totalItens ?></div>
-                        <div class="stat-box__hint">Itens dimensionados</div>
-                    </div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-box__icon stat-box__icon--violet" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                        </svg>
-                    </div>
-                    <div class="stat-box__content">
-                        <div class="stat-box__label">Total de componentes</div>
-                        <div class="stat-box__value"><?= $totalComponentes ?></div>
-                        <div class="stat-box__hint">Soma das quantidades</div>
-                    </div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-box__icon stat-box__icon--orange" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
-                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
-                        </svg>
-                    </div>
-                    <div class="stat-box__content">
-                        <div class="stat-box__label">Categorias</div>
-                        <div class="stat-box__value"><?= $categoriasUnicas ?></div>
-                        <div class="stat-box__hint">Tipos de componentes</div>
-                    </div>
-                </div>
-            </div>
-
             <section class="card card--result">
                 <div class="componentes-toolbar">
                     <div class="componentes-search">
@@ -682,15 +636,103 @@ echo '</pre>';
                 </div>
             </section>
 
-            <div class="componentes-ilustracao" aria-hidden="true">
-                <svg viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M30 110h140v20H30z" fill="#DBEAFE" opacity="0.5"/>
-                    <path d="M60 50 L100 20 L140 50 L140 110 L60 110 Z" fill="#EFF6FF" stroke="#93C5FD" stroke-width="2"/>
-                    <path d="M70 60h25v20H70zM105 60h25v20h-25z" fill="#BFDBFE" stroke="#60A5FA" stroke-width="1.5"/>
-                    <rect x="145" y="75" width="30" height="35" rx="3" fill="#DBEAFE" stroke="#60A5FA" stroke-width="1.5"/>
-                    <circle cx="160" cy="92" r="6" fill="#2563EB" opacity="0.3"/>
-                </svg>
-            </div>
+            <section class="card card--result resumo-dimensionamento">
+                <div class="resumo-dimensionamento__intro">
+                    <h2 class="resumo-dimensionamento__title">Resumo de dimensionamento</h2>
+                    <p class="resumo-dimensionamento__subtitle">Valores calculados para o sistema fotovoltaico</p>
+                </div>
+
+                <div class="componentes-lista componentes-lista--resumo">
+                    <div class="componentes-lista__header" aria-hidden="true">
+                        <span>Componente</span>
+                        <span>Necessário</span>
+                        <span>Gerada</span>
+                        <span>Unidade</span>
+                    </div>
+
+                    <div class="componentes-lista__body">
+                        <article class="componente-item resumo-item resumo-item--energia">
+                            <div class="componente-item__info">
+                                <div class="componente-item__icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                </div>
+                                <div class="componente-item__texto">
+                                    <h3 class="componente-nome">Energia</h3>
+                                </div>
+                            </div>
+                            <div class="resumo-item__valor">
+                                <span class="resumo-badge resumo-badge--necessario"><?= number_format($energia_necessaria_kw, 2, ',', '.') ?></span>
+                            </div>
+                            <div class="resumo-item__valor">
+                                <span class="resumo-badge resumo-badge--gerada"><?= number_format($energia_gerada_kw, 2, ',', '.') ?></span>
+                            </div>
+                            <div class="resumo-item__unidade">
+                                <span class="resumo-unidade">Kw/P</span>
+                            </div>
+                        </article>
+
+                        <article class="componente-item resumo-item resumo-item--bateria">
+                            <div class="componente-item__info">
+                                <div class="componente-item__icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2"/><path d="M6 11v2M10 11v2M14 11v2"/></svg>
+                                </div>
+                                <div class="componente-item__texto">
+                                    <h3 class="componente-nome">Bateria</h3>
+                                </div>
+                            </div>
+                            <div class="resumo-item__valor">
+                                <span class="resumo-badge resumo-badge--necessario"><?= number_format($bateria_necessaria_ah, 2, ',', '.') ?></span>
+                            </div>
+                            <div class="resumo-item__valor">
+                                <span class="resumo-badge resumo-badge--gerada"><?= number_format($bateria_gerada_ah, 2, ',', '.') ?></span>
+                            </div>
+                            <div class="resumo-item__unidade">
+                                <span class="resumo-unidade">Ah</span>
+                            </div>
+                        </article>
+
+                        <article class="componente-item resumo-item resumo-item--inversor">
+                            <div class="componente-item__info">
+                                <div class="componente-item__icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16M4 12c2-4 6-6 8-6s6 2 8 6M4 12c2 4 6 6 8 6s6-2 8-6"/></svg>
+                                </div>
+                                <div class="componente-item__texto">
+                                    <h3 class="componente-nome">Inversor</h3>
+                                </div>
+                            </div>
+                            <div class="resumo-item__valor">
+                                <span class="resumo-badge resumo-badge--necessario"><?= number_format($inversor_necessario_w, 2, ',', '.') ?></span>
+                            </div>
+                            <div class="resumo-item__valor">
+                                <span class="resumo-badge resumo-badge--gerada"><?= number_format($inversor_gerado_w, 2, ',', '.') ?></span>
+                            </div>
+                            <div class="resumo-item__unidade">
+                                <span class="resumo-unidade">W</span>
+                            </div>
+                        </article>
+
+                        <article class="componente-item resumo-item resumo-item--controlador">
+                            <div class="componente-item__info">
+                                <div class="componente-item__icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
+                                </div>
+                                <div class="componente-item__texto">
+                                    <h3 class="componente-nome">Controlador de carga</h3>
+                                </div>
+                            </div>
+                            <div class="resumo-item__valor">
+                                <span class="resumo-badge resumo-badge--necessario"><?= number_format($controlador_necessario, 2, ',', '.') ?></span>
+                            </div>
+                            <div class="resumo-item__valor">
+                                <span class="resumo-badge resumo-badge--gerada"><?= number_format($controlador_gerado, 2, ',', '.') ?></span>
+                            </div>
+                            <div class="resumo-item__unidade">
+                                <span class="resumo-unidade">Ah</span>
+                            </div>
+                        </article>
+                    </div>
+                </div>
+            </section>
         <?php endif; ?>
     </div>
 

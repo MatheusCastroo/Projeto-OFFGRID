@@ -210,7 +210,7 @@ if ($tensao_saida_inversor && $tensao_entrada_inversor) {
 // =========== Resultados (somente exibição) =============
 $resultados = [];
 
-$stmt = $conn->prepare('SELECT sku, painel FROM placa_solar WHERE painel = ? LIMIT 1');
+$stmt = $conn->prepare('SELECT sku, painel, preco FROM placa_solar WHERE painel = ? LIMIT 1');
 $stmt->bind_param('s', $modelo_placa);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -219,11 +219,12 @@ if ($row = $result->fetch_assoc()) {
         'descricao' => $row['painel'],
         'quantidade' => $quantidade_placas,
         'sku' => $row['sku'],
+        'preco' => $row['preco'] !== null ? (float) $row['preco'] : null,
     ];
 }
 $stmt->close();
 
-$stmt = $conn->prepare('SELECT sku, bateria_desc FROM bateria WHERE bateria_desc = ? LIMIT 1');
+$stmt = $conn->prepare('SELECT sku, bateria_desc, preco FROM bateria WHERE bateria_desc = ? LIMIT 1');
 $stmt->bind_param('s', $modelo_bateria);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -232,6 +233,7 @@ if ($row = $result->fetch_assoc()) {
         'descricao' => $row['bateria_desc'],
         'quantidade' => $quantidade_bateria,
         'sku' => $row['sku'],
+        'preco' => $row['preco'] !== null ? (float) $row['preco'] : null,
     ];
 }
 $stmt->close();
@@ -241,13 +243,14 @@ if ($inversor_escolhido) {
         'sku' => $inversor_escolhido['sku'],
         'inversor_desc' => $inversor_escolhido['inversor'],
         'quantidade' => $quantidade_inversor ?: 1,
+        'preco' => $inversor_escolhido['preco'] !== null ? (float) $inversor_escolhido['preco'] : null,
     ];
 }
 
 $controlador_escolhido = null;
 
 $sql = '
-    SELECT sku, controlador, corrente_nominal, tensao_circuito_aberto,
+    SELECT sku, preco, controlador, corrente_nominal, tensao_circuito_aberto,
            tensao_1_vdc, tensao_2_vdc, tensao_3_vdc, tipo_controle, quantidade
     FROM controlador_carga
     WHERE tipo_controle = ?
@@ -294,10 +297,11 @@ if ($controlador_escolhido) {
         'descricao' => $controlador_escolhido['controlador'],
         'quantidade' => (int) $controlador_escolhido['quantidade'],
         'sku' => $controlador_escolhido['sku'],
+        'preco' => $controlador_escolhido['preco'] !== null ? (float) $controlador_escolhido['preco'] : null,
     ];
 }
 
-$stmt = $conn->prepare('SELECT sku, estrutura_desc, quantidade FROM estrutura_solar WHERE estrutura_desc = ? LIMIT 1');
+$stmt = $conn->prepare('SELECT sku, estrutura_desc, quantidade, preco FROM estrutura_solar WHERE estrutura_desc = ? LIMIT 1');
 $stmt->bind_param('s', $estrutura);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -312,6 +316,7 @@ if ($row = $result->fetch_assoc()) {
             'descricao' => $row['estrutura_desc'],
             'quantidade' => $quantidade_estrutura,
             'sku' => $row['sku'],
+            'preco' => $row['preco'] !== null ? (float) $row['preco'] : null,
         ];
     }
 }
@@ -325,7 +330,7 @@ if ($controlador_escolhido && $controlador_escolhido['quantidade'] > 0) {
         / $controlador_escolhido['quantidade'];
 
     $sql = '
-        SELECT sku, descricao, corrente_nominal
+        SELECT sku, descricao, corrente_nominal, preco
         FROM disjuntor
         WHERE tipo = ?
           AND corrente_nominal > ?
@@ -352,6 +357,7 @@ if ($controlador_escolhido && $controlador_escolhido['quantidade'] > 0) {
             'descricao' => $disjuntor_dc_escolhido['descricao'],
             'quantidade' => (int) $controlador_escolhido['quantidade'],
             'sku' => $disjuntor_dc_escolhido['sku'],
+            'preco' => $disjuntor_dc_escolhido['preco'] !== null ? (float) $disjuntor_dc_escolhido['preco'] : null,
         ];
     }
 }
@@ -362,7 +368,7 @@ $corrente_disjuntor_ac = $tensao_saida_inversor > 0
 
 if ($corrente_disjuntor_ac > 0) {
     $sql = '
-        SELECT sku, descricao, corrente_nominal
+        SELECT sku, descricao, corrente_nominal, preco
         FROM disjuntor
         WHERE tipo = ?
           AND corrente_nominal >= ?
@@ -389,6 +395,7 @@ if ($corrente_disjuntor_ac > 0) {
             'descricao' => $disjuntor_ac_escolhido['descricao'],
             'quantidade' => 1,
             'sku' => $disjuntor_ac_escolhido['sku'],
+            'preco' => $disjuntor_ac_escolhido['preco'] !== null ? (float) $disjuntor_ac_escolhido['preco'] : null,
         ];
     }
 }
@@ -445,6 +452,20 @@ function detectarCategoriaComponente(string $descricao): string
     }
 
     return 'outro';
+}
+
+function formatarNumero(float|int $valor, int $decimais = 0): string
+{
+    return number_format((float) $valor, $decimais, ',', '.');
+}
+
+function formatarPreco(?float $valor): string
+{
+    if ($valor === null) {
+        return '—';
+    }
+
+    return 'R$ ' . formatarNumero($valor, 2);
 }
 
 function extrairNomeComponente(string $descricao): string
@@ -565,6 +586,7 @@ $categoriasLabel = [
                 'descricao' => $descricaoInversor,
                 'quantidade' => $quantidade_inversor ?: 1,
                 'sku' => $inversor_escolhido['sku'],
+                'preco' => $inversor_escolhido['preco'] !== null ? (float) $inversor_escolhido['preco'] : null,
                 'categoria' => $categoriaInversor,
                 'nome_curto' => extrairNomeComponente($descricaoInversor),
                 'categoria_label' => $categoriasLabel[$categoriaInversor] ?? $categoriasLabel['outro'],
@@ -572,6 +594,31 @@ $categoriasLabel = [
         }
 
         $componentes = array_values($unicos);
+        $valorTotalEquipamentos = 0.0;
+        $itensSemPreco = [];
+
+        foreach ($componentes as &$componente) {
+            $precoUnitario = array_key_exists('preco', $componente) && $componente['preco'] !== null
+                ? (float) $componente['preco']
+                : null;
+            $quantidadeItem = (int) ($componente['quantidade'] ?? 1);
+
+            if ($precoUnitario !== null) {
+                $precoTotal = $precoUnitario * $quantidadeItem;
+                $componente['preco_unitario'] = $precoUnitario;
+                $componente['preco_total'] = $precoTotal;
+                $valorTotalEquipamentos += $precoTotal;
+            } else {
+                $componente['preco_unitario'] = null;
+                $componente['preco_total'] = null;
+                $itensSemPreco[] = [
+                    'sku' => $componente['sku'] ?? null,
+                    'descricao' => $componente['descricao'] ?? '',
+                ];
+            }
+        }
+        unset($componente);
+
         $totalItens = count($componentes);
         ?>
 
@@ -613,6 +660,7 @@ $categoriasLabel = [
                             <span>Componente</span>
                         </div>
                         <span class="componentes-lista__col componentes-lista__col--quantidade">Quantidade</span>
+                        <span class="componentes-lista__col componentes-lista__col--preco">Valor unit.</span>
                         <span class="componentes-lista__col componentes-lista__col--sku">SKU</span>
                     </div>
 
@@ -621,6 +669,7 @@ $categoriasLabel = [
                             $quantidade = (int) ($item['quantidade'] ?? 1);
                             $sku = (string) ($item['sku'] ?? '—');
                             $categoria = $item['categoria'] ?? 'outro';
+                            $precoUnitario = $item['preco_unitario'] ?? null;
                         ?>
                             <article
                                 class="componente-item componente-item--<?= htmlspecialchars($categoria) ?>"
@@ -651,8 +700,13 @@ $categoriasLabel = [
                                     </div>
                                 </div>
                                 <div class="componente-item__quantidade">
-                                    <span class="quantidade-badge"><?= $quantidade ?></span>
+                                    <span class="quantidade-badge"><?= htmlspecialchars(formatarNumero($quantidade, 0)) ?></span>
                                     <span class="quantidade-unidade"><?= $quantidade === 1 ? 'unidade' : 'unidades' ?></span>
+                                </div>
+                                <div class="componente-item__preco">
+                                    <span class="preco-valor<?= $precoUnitario === null ? ' preco-valor--indisponivel' : '' ?>">
+                                        <?= htmlspecialchars(formatarPreco($precoUnitario)) ?>
+                                    </span>
                                 </div>
                                 <div class="componente-item__sku">
                                     <span class="sku-tag"><?= htmlspecialchars($sku) ?></span>
@@ -677,6 +731,18 @@ $categoriasLabel = [
                             </button>
                         </div>
                     </footer>
+                </div>
+
+                <div class="componentes-valor-total" role="status" aria-live="polite">
+                    <div class="componentes-valor-total__info">
+                        <span class="componentes-valor-total__titulo">Valor total dos equipamentos</span>
+                        <?php if (!empty($itensSemPreco)): ?>
+                            <span class="componentes-valor-total__aviso">
+                                <?= count($itensSemPreco) ?> item(ns) sem preço — não incluídos no total
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                    <strong class="componentes-valor-total__valor"><?= htmlspecialchars(formatarPreco($valorTotalEquipamentos)) ?></strong>
                 </div>
             </section>
 
@@ -708,10 +774,10 @@ $categoriasLabel = [
                                 </div>
                             </div>
                             <div class="resumo-item__valor">
-                                <span class="resumo-badge resumo-badge--necessario"><?= number_format($energia_necessaria_kw, 2, ',', '.') ?></span>
+                                <span class="resumo-badge resumo-badge--necessario"><?= formatarNumero($energia_necessaria_kw, 2) ?></span>
                             </div>
                             <div class="resumo-item__valor">
-                                <span class="resumo-badge resumo-badge--gerada"><?= number_format($energia_gerada_kw, 2, ',', '.') ?></span>
+                                <span class="resumo-badge resumo-badge--gerada"><?= formatarNumero($energia_gerada_kw, 2) ?></span>
                             </div>
                             <div class="resumo-item__unidade">
                                 <span class="resumo-unidade">Kw/P</span>
@@ -728,10 +794,10 @@ $categoriasLabel = [
                                 </div>
                             </div>
                             <div class="resumo-item__valor">
-                                <span class="resumo-badge resumo-badge--necessario"><?= number_format($bateria_necessaria_ah, 2, ',', '.') ?></span>
+                                <span class="resumo-badge resumo-badge--necessario"><?= formatarNumero($bateria_necessaria_ah, 2) ?></span>
                             </div>
                             <div class="resumo-item__valor">
-                                <span class="resumo-badge resumo-badge--gerada"><?= number_format($bateria_gerada_ah, 2, ',', '.') ?></span>
+                                <span class="resumo-badge resumo-badge--gerada"><?= formatarNumero($bateria_gerada_ah, 2) ?></span>
                             </div>
                             <div class="resumo-item__unidade">
                                 <span class="resumo-unidade">Ah</span>
@@ -748,10 +814,10 @@ $categoriasLabel = [
                                 </div>
                             </div>
                             <div class="resumo-item__valor">
-                                <span class="resumo-badge resumo-badge--necessario"><?= number_format($inversor_necessario_w, 2, ',', '.') ?></span>
+                                <span class="resumo-badge resumo-badge--necessario"><?= formatarNumero($inversor_necessario_w, 2) ?></span>
                             </div>
                             <div class="resumo-item__valor">
-                                <span class="resumo-badge resumo-badge--gerada"><?= number_format($inversor_gerado_w, 2, ',', '.') ?></span>
+                                <span class="resumo-badge resumo-badge--gerada"><?= formatarNumero($inversor_gerado_w, 2) ?></span>
                             </div>
                             <div class="resumo-item__unidade">
                                 <span class="resumo-unidade">W</span>
@@ -768,10 +834,10 @@ $categoriasLabel = [
                                 </div>
                             </div>
                             <div class="resumo-item__valor">
-                                <span class="resumo-badge resumo-badge--necessario"><?= number_format($controlador_necessario, 2, ',', '.') ?></span>
+                                <span class="resumo-badge resumo-badge--necessario"><?= formatarNumero($controlador_necessario, 2) ?></span>
                             </div>
                             <div class="resumo-item__valor">
-                                <span class="resumo-badge resumo-badge--gerada"><?= number_format($controlador_gerado, 2, ',', '.') ?></span>
+                                <span class="resumo-badge resumo-badge--gerada"><?= formatarNumero($controlador_gerado, 2) ?></span>
                             </div>
                             <div class="resumo-item__unidade">
                                 <span class="resumo-unidade">Ah</span>

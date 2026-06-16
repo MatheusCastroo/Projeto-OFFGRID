@@ -12,11 +12,18 @@
         return Number.isFinite(n) ? n : 0;
     }
 
+    function formatNumeroBR(value, decimals = 0) {
+        return new Intl.NumberFormat('pt-BR', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+        }).format(value);
+    }
+
     function formatWh(wh) {
         if (wh >= 1000) {
-            return { value: (wh / 1000).toFixed(2), unit: 'kWh/dia' };
+            return { value: formatNumeroBR(wh / 1000, 2), unit: 'kWh/dia' };
         }
-        return { value: Math.round(wh).toString(), unit: 'Wh/dia' };
+        return { value: formatNumeroBR(Math.round(wh), 0), unit: 'Wh/dia' };
     }
 
     function potenciaEquipamentoW(qtd, pot) {
@@ -40,8 +47,8 @@
         const el = row.querySelector('.equip-row__total-value');
         if (el) {
             el.textContent = potenciaW >= 1000
-                ? (potenciaW / 1000).toFixed(2) + ' kW'
-                : Math.round(potenciaW) + ' W';
+                ? formatNumeroBR(potenciaW / 1000, 2) + ' kW'
+                : formatNumeroBR(Math.round(potenciaW), 0) + ' W';
         }
     }
 
@@ -64,13 +71,13 @@
             if (removeBtn) removeBtn.hidden = rows.length <= 1;
         });
 
-        totalEquipamentos.textContent = rows.length;
+        totalEquipamentos.textContent = formatNumeroBR(rows.length, 0);
 
         const potenciaTotalEl = document.getElementById('potencia-total');
         if (potenciaTotalEl) {
             potenciaTotalEl.textContent = potenciaTotal >= 1000
-                ? (potenciaTotal / 1000).toFixed(2)
-                : Math.round(potenciaTotal).toString();
+                ? formatNumeroBR(potenciaTotal / 1000, 2)
+                : formatNumeroBR(Math.round(potenciaTotal), 0);
             const potenciaUnidade = potenciaTotalEl.nextElementSibling;
             if (potenciaUnidade?.classList.contains('stat-box__unit')) {
                 potenciaUnidade.textContent = potenciaTotal >= 1000 ? 'kW' : 'W';

@@ -3,6 +3,7 @@
 
     const equipList = document.getElementById('equip-list');
     const btnAdd = document.getElementById('btn-adicionar');
+    const btnClear = document.getElementById('btn-limpar');
     const form = document.getElementById('form-dimensionamento');
     const totalEquipamentos = document.getElementById('total-equipamentos');
     const consumoTotal = document.getElementById('consumo-total');
@@ -237,7 +238,54 @@
         updateSummary();
     }
 
+    function clearForm() {
+        if (!form || !equipList) return;
+
+        const template = document.getElementById('equip-template');
+        if (!template) return;
+
+        equipList.innerHTML = '';
+        const clone = template.content.cloneNode(true);
+        const row = clone.querySelector('.equip-row');
+        bindRowEvents(row);
+        equipList.appendChild(clone);
+
+        form.querySelectorAll('select').forEach((select) => {
+            select.selectedIndex = 0;
+        });
+
+        const descargaBateria = form.querySelector('#descarga_bateria');
+        if (descargaBateria) descargaBateria.value = '0.5';
+
+        const autonomia = form.querySelector('#autonomia');
+        if (autonomia) autonomia.value = '2';
+
+        form.querySelectorAll('.is-invalid').forEach((field) => field.classList.remove('is-invalid'));
+        form.querySelectorAll('.form-error').forEach((errorEl) => {
+            errorEl.textContent = '';
+        });
+
+        window.__formRestore = null;
+        updateSummary();
+
+        if (window.history.replaceState) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('editar');
+            window.history.replaceState({}, '', url);
+        }
+
+        fetch('index.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'limpar_dimensionamento=1',
+        }).catch(() => {});
+    }
+
     btnAdd?.addEventListener('click', createEquipRow);
+    btnClear?.addEventListener('click', () => {
+        if (!window.confirm('Deseja limpar todos os campos do formulário?')) return;
+        clearForm();
+    });
 
     if (window.__formRestore && typeof window.__formRestore === 'object') {
         restoreFormData(window.__formRestore);

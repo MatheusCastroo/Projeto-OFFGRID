@@ -462,7 +462,7 @@ function formatarNumero(float|int $valor, int $decimais = 0): string
 function formatarPreco(?float $valor): string
 {
     if ($valor === null) {
-        return '—';
+        return 'Preço sob consulta.';
     }
 
     return 'R$ ' . formatarNumero($valor, 2);
@@ -496,6 +496,118 @@ $categoriasLabel = [
     'outro' => 'Componente',
 ];
 
+$componentes = [];
+foreach ($resultados as $item) {
+    if (!componenteEstaDisponivel($item)) {
+        continue;
+    }
+
+    $descricao = $item['descricao'] ?? $item['inversor_desc'] ?? $item['disjuntor_desc'] ?? null;
+    if (!$descricao) {
+        continue;
+    }
+    $categoria = detectarCategoriaComponente($descricao);
+    $componentes[] = array_merge($item, [
+        'descricao' => $descricao,
+        'categoria' => $categoria,
+        'nome_curto' => extrairNomeComponente($descricao),
+        'categoria_label' => $categoriasLabel[$categoria] ?? $categoriasLabel['outro'],
+    ]);
+}
+
+$unicos = [];
+foreach ($componentes as $item) {
+    $sku = $item['sku'] ?? uniqid('item_', true);
+    $unicos[$sku] = $item;
+}
+
+if ($inversor_escolhido && !isset($unicos[$inversor_escolhido['sku']])) {
+    $descricaoInversor = $inversor_escolhido['inversor'];
+    $categoriaInversor = detectarCategoriaComponente($descricaoInversor);
+    $unicos[$inversor_escolhido['sku']] = [
+        'descricao' => $descricaoInversor,
+        'quantidade' => $quantidade_inversor ?: 1,
+        'sku' => $inversor_escolhido['sku'],
+        'preco' => $inversor_escolhido['preco'] !== null ? (float) $inversor_escolhido['preco'] : null,
+        'categoria' => $categoriaInversor,
+        'nome_curto' => extrairNomeComponente($descricaoInversor),
+        'categoria_label' => $categoriasLabel[$categoriaInversor] ?? $categoriasLabel['outro'],
+    ];
+}
+
+$componentes = array_values($unicos);
+$valorTotalEquipamentos = 0.0;
+$itensSemPreco = [];
+
+foreach ($componentes as &$componente) {
+    $precoUnitario = array_key_exists('preco', $componente) && $componente['preco'] !== null
+        ? (float) $componente['preco']
+        : null;
+    $quantidadeItem = (int) ($componente['quantidade'] ?? 1);
+
+    if ($precoUnitario !== null) {
+        $precoTotal = $precoUnitario * $quantidadeItem;
+        $componente['preco_unitario'] = $precoUnitario;
+        $componente['preco_total'] = $precoTotal;
+        $valorTotalEquipamentos += $precoTotal;
+    } else {
+        $componente['preco_unitario'] = null;
+        $componente['preco_total'] = null;
+        $itensSemPreco[] = [
+            'sku' => $componente['sku'] ?? null,
+            'descricao' => $componente['descricao'] ?? '',
+        ];
+    }
+}
+unset($componente);
+
+$totalItens = count($componentes);
+
+if (!empty($componentes)) {
+    $_SESSION['dimensionamento_export'] = [
+        'gerado_em' => date('d/m/Y H:i'),
+        'componentes' => array_map(static function (array $item): array {
+            return [
+                'categoria' => $item['categoria_label'] ?? '',
+                'nome' => $item['nome_curto'] ?? '',
+                'descricao' => $item['descricao'] ?? '',
+                'quantidade' => (int) ($item['quantidade'] ?? 1),
+                'preco_unitario' => $item['preco_unitario'] ?? null,
+                'preco_total' => $item['preco_total'] ?? null,
+                'sku' => (string) ($item['sku'] ?? ''),
+            ];
+        }, $componentes),
+        'resumo' => [
+            [
+                'nome' => 'Energia',
+                'necessario' => $energia_necessaria_kw,
+                'gerado' => $energia_gerada_kw,
+                'unidade' => 'Kw/P',
+            ],
+            [
+                'nome' => 'Bateria',
+                'necessario' => $bateria_necessaria_ah,
+                'gerado' => $bateria_gerada_ah,
+                'unidade' => 'Ah',
+            ],
+            [
+                'nome' => 'Inversor',
+                'necessario' => $inversor_necessario_w,
+                'gerado' => $inversor_gerado_w,
+                'unidade' => 'W',
+            ],
+            [
+                'nome' => 'Controlador de carga',
+                'necessario' => $controlador_necessario,
+                'gerado' => $controlador_gerado,
+                'unidade' => 'Ah',
+            ],
+        ],
+        'valor_total' => $valorTotalEquipamentos,
+        'itens_sem_preco' => count($itensSemPreco),
+    ];
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -523,6 +635,46 @@ $categoriasLabel = [
                 </div>
             </div>
             <div class="page-header__actions">
+                <?php if (!empty($componentes)): ?>
+                    <div class="export-dropdown" id="export-dropdown">
+                        <button
+                            type="button"
+                            class="btn btn-secondary export-dropdown__toggle"
+                            id="btn-exportar"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
+                            aria-controls="menu-exportar"
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Exportar
+                            <svg class="export-dropdown__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                        </button>
+                        <div class="export-dropdown__menu" id="menu-exportar" role="menu" hidden>
+                            <a href="exportar.php?formato=pdf" class="export-dropdown__item" role="menuitem">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                </svg>
+                                PDF
+                            </a>
+                            <a href="exportar.php?formato=excel" class="export-dropdown__item" role="menuitem">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="8" y1="13" x2="16" y2="13"/>
+                                    <line x1="8" y1="17" x2="16" y2="17"/>
+                                </svg>
+                                Excel
+                            </a>
+                        </div>
+                    </div>
+                <?php endif; ?>
                 <form method="post" action="index.php" class="form-restaurar-dimensionamento">
                     <?php
                     $formSalvo = $_SESSION['dimensionamento_form'] ?? [];
@@ -541,86 +693,13 @@ $categoriasLabel = [
                     endforeach;
                     ?>
                     <input type="hidden" name="restaurar_dimensionamento" value="1">
-                    <button type="submit" class="btn btn-secondary">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        Editar informações
+                    <button type="submit" class="btn btn-outline">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                        Voltar
                     </button>
                 </form>
-                <a href="index.php" class="btn btn-outline">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                    Voltar
-                </a>
             </div>
         </header>
-
-        <?php
-        $componentes = [];
-        foreach ($resultados as $item) {
-            if (!componenteEstaDisponivel($item)) {
-                continue;
-            }
-
-            $descricao = $item['descricao'] ?? $item['inversor_desc'] ?? $item['disjuntor_desc'] ?? null;
-            if (!$descricao) {
-                continue;
-            }
-            $categoria = detectarCategoriaComponente($descricao);
-            $componentes[] = array_merge($item, [
-                'descricao' => $descricao,
-                'categoria' => $categoria,
-                'nome_curto' => extrairNomeComponente($descricao),
-                'categoria_label' => $categoriasLabel[$categoria] ?? $categoriasLabel['outro'],
-            ]);
-        }
-
-        $unicos = [];
-        foreach ($componentes as $item) {
-            $sku = $item['sku'] ?? uniqid('item_', true);
-            $unicos[$sku] = $item;
-        }
-
-        if ($inversor_escolhido && !isset($unicos[$inversor_escolhido['sku']])) {
-            $descricaoInversor = $inversor_escolhido['inversor'];
-            $categoriaInversor = detectarCategoriaComponente($descricaoInversor);
-            $unicos[$inversor_escolhido['sku']] = [
-                'descricao' => $descricaoInversor,
-                'quantidade' => $quantidade_inversor ?: 1,
-                'sku' => $inversor_escolhido['sku'],
-                'preco' => $inversor_escolhido['preco'] !== null ? (float) $inversor_escolhido['preco'] : null,
-                'categoria' => $categoriaInversor,
-                'nome_curto' => extrairNomeComponente($descricaoInversor),
-                'categoria_label' => $categoriasLabel[$categoriaInversor] ?? $categoriasLabel['outro'],
-            ];
-        }
-
-        $componentes = array_values($unicos);
-        $valorTotalEquipamentos = 0.0;
-        $itensSemPreco = [];
-
-        foreach ($componentes as &$componente) {
-            $precoUnitario = array_key_exists('preco', $componente) && $componente['preco'] !== null
-                ? (float) $componente['preco']
-                : null;
-            $quantidadeItem = (int) ($componente['quantidade'] ?? 1);
-
-            if ($precoUnitario !== null) {
-                $precoTotal = $precoUnitario * $quantidadeItem;
-                $componente['preco_unitario'] = $precoUnitario;
-                $componente['preco_total'] = $precoTotal;
-                $valorTotalEquipamentos += $precoTotal;
-            } else {
-                $componente['preco_unitario'] = null;
-                $componente['preco_total'] = null;
-                $itensSemPreco[] = [
-                    'sku' => $componente['sku'] ?? null,
-                    'descricao' => $componente['descricao'] ?? '',
-                ];
-            }
-        }
-        unset($componente);
-
-        $totalItens = count($componentes);
-        ?>
 
         <?php if (empty($componentes)): ?>
             <section class="card card--result">
@@ -888,6 +967,46 @@ $categoriasLabel = [
 
         busca.addEventListener('input', filtrarComponentes);
         filtro?.addEventListener('change', filtrarComponentes);
+
+        const exportDropdown = document.getElementById('export-dropdown');
+        const exportToggle = document.getElementById('btn-exportar');
+        const exportMenu = document.getElementById('menu-exportar');
+
+        if (exportDropdown && exportToggle && exportMenu) {
+            function fecharExportMenu() {
+                exportDropdown.classList.remove('is-open');
+                exportToggle.setAttribute('aria-expanded', 'false');
+                exportMenu.hidden = true;
+            }
+
+            exportToggle.addEventListener('click', () => {
+                const aberto = !exportMenu.hidden;
+                if (aberto) {
+                    fecharExportMenu();
+                    return;
+                }
+
+                exportDropdown.classList.add('is-open');
+                exportToggle.setAttribute('aria-expanded', 'true');
+                exportMenu.hidden = false;
+            });
+
+            document.addEventListener('click', (event) => {
+                if (!exportDropdown.contains(event.target)) {
+                    fecharExportMenu();
+                }
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    fecharExportMenu();
+                }
+            });
+
+            exportMenu.querySelectorAll('.export-dropdown__item').forEach((item) => {
+                item.addEventListener('click', fecharExportMenu);
+            });
+        }
     })();
     </script>
 </body>

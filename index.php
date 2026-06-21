@@ -4,6 +4,13 @@ session_start();
 require_once 'database.php';
 
 $formData = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['limpar_dimensionamento'])) {
+    unset($_SESSION['dimensionamento_form']);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['restaurar_dimensionamento'])) {
     $formData = $_POST;
     unset($formData['restaurar_dimensionamento']);
@@ -573,6 +580,18 @@ $formRestoreJson = $formData !== null
                     </div>
 
                     <div class="card__footer card__footer--submit">
+
+                        <button type="button" class="btn btn-outline" id="btn-limpar">
+
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+
+                                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+
+                            </svg>
+
+                            Limpar
+
+                        </button>
 
                         <button type="submit" class="btn btn-primary" id="btnCalcular">
 

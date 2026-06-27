@@ -5,8 +5,27 @@
     const btnAdd = document.getElementById('btn-adicionar');
     const btnClear = document.getElementById('btn-limpar');
     const form = document.getElementById('form-dimensionamento');
+    const btnCalcular = document.getElementById('btnCalcular');
     const totalEquipamentos = document.getElementById('total-equipamentos');
     const consumoTotal = document.getElementById('consumo-total');
+
+    const CAMPOS_OBRIGATORIOS = [
+        'regiao',
+        'modelo_controlador',
+        'modelo_placa',
+        'tensao_sistema',
+        'modelo_bateria',
+        'descarga_bateria',
+        'tensao_bateria',
+        'autonomia',
+        'estrutura',
+    ];
+
+    const CAMPOS_COM_PRECO = [
+        'modelo_placa',
+        'modelo_bateria',
+        'estrutura',
+    ];
 
     function parseNum(value) {
         const n = parseFloat(String(value).replace(',', '.'));
@@ -91,19 +110,118 @@
         if (unidadeEl) unidadeEl.textContent = formatted.unit;
 
         updateScrollState();
+        updateSubmitButton();
+    }
+
+    function setFieldError(field, message) {
+        if (!field) return;
+
+        const group = field.closest('.form-group');
+        const errorEl = group?.querySelector('.form-error');
+
+        field.classList.toggle('is-invalid', !!message);
+        if (errorEl) errorEl.textContent = message;
+    }
+
+    function optionSemPreco(select) {
+        if (!select || !select.value) return false;
+
+        const option = select.selectedOptions[0];
+        return option?.dataset.temPreco === '0';
+    }
+
+    function validarPrecoSelect(select, showMessage = true) {
+        if (!select) return true;
+
+        let message = '';
+
+        if (select.value && optionSemPreco(select)) {
+            const descricao = select.selectedOptions[0]?.textContent.trim() || 'Item selecionado';
+            message = descricao + ' não possui preço cadastrado.';
+        }
+
+        if (showMessage) {
+            setFieldError(select, message);
+        } else if (!message) {
+            setFieldError(select, '');
+        }
+
+        return !message;
+    }
+
+    function validarTodosPrecos(showMessages = true) {
+        return CAMPOS_COM_PRECO.every((name) => {
+            const field = form?.querySelector(`[name="${name}"]`);
+            return validarPrecoSelect(field, showMessages);
+        });
+    }
+
+    function equipamentoLinhaPreenchida(row) {
+        const nome = row.querySelector('[name="nome[]"]')?.value.trim();
+        const qtd = parseNum(row.querySelector('[name="quantidade[]"]')?.value);
+        const pot = parseNum(row.querySelector('[name="potencia[]"]')?.value);
+        const hrs = parseNum(row.querySelector('[name="horas[]"]')?.value);
+
+        return !!nome && qtd > 0 && pot > 0 && hrs > 0;
+    }
+
+    function formularioCompleto() {
+        if (!form || !equipList) return false;
+
+        const camposOk = CAMPOS_OBRIGATORIOS.every((name) => {
+            const field = form.querySelector(`[name="${name}"]`);
+            if (!field) return false;
+
+            const valor = String(field.value ?? '').trim();
+            if (valor === '') return false;
+
+            if (field.type === 'number') {
+                const numero = parseNum(field.value);
+                if (!Number.isFinite(numero) || numero <= 0) return false;
+            }
+
+            return true;
+        });
+
+        if (!camposOk) return false;
+
+        const rows = equipList.querySelectorAll('.equip-row');
+        const linhasPreenchidas = Array.from(rows).filter(equipamentoLinhaPreenchida);
+
+        return linhasPreenchidas.length > 0;
+    }
+
+    function updateSubmitButton() {
+        if (!btnCalcular) return;
+
+        const completo = formularioCompleto();
+        const precosOk = validarTodosPrecos(false);
+        const habilitar = completo && precosOk;
+
+        btnCalcular.disabled = !habilitar;
     }
 
     function bindRowEvents(row) {
         row.querySelectorAll('input, select').forEach((field) => {
-            field.addEventListener('input', updateSummary);
-            field.addEventListener('change', updateSummary);
-            field.addEventListener('blur', () => validateField(field));
+            field.addEventListener('input', () => {
+                updateSummary();
+                updateSubmitButton();
+            });
+            field.addEventListener('change', () => {
+                updateSummary();
+                updateSubmitButton();
+            });
+            field.addEventListener('blur', () => {
+                validateField(field);
+                updateSubmitButton();
+            });
         });
 
         row.querySelector('.btn-remove')?.addEventListener('click', () => {
             if (equipList.querySelectorAll('.equip-row').length > 1) {
                 row.remove();
                 updateSummary();
+                updateSubmitButton();
             }
         });
     }
@@ -127,6 +245,10 @@
         const group = field.closest('.form-group');
         const errorEl = group?.querySelector('.form-error');
         let message = '';
+
+        if (field.tagName === 'SELECT' && CAMPOS_COM_PRECO.includes(field.name)) {
+            return validarPrecoSelect(field, true);
+        }
 
         if (field.hasAttribute('required') && !String(field.value).trim()) {
             message = 'Campo obrigatório.';
@@ -165,8 +287,14 @@
 
     function validateForm() {
         let valid = true;
+
         form.querySelectorAll('[required]').forEach((field) => {
             if (!validateField(field)) valid = false;
+        });
+
+        CAMPOS_COM_PRECO.forEach((name) => {
+            const field = form.querySelector(`[name="${name}"]`);
+            if (field && !validarPrecoSelect(field, true)) valid = false;
         });
 
         const rows = equipList.querySelectorAll('.equip-row');
@@ -183,12 +311,13 @@
             valid = false;
             const first = rows[0]?.querySelector('[name="nome[]"]');
             if (first) {
-                first.classList.add('is-invalid');
-                const err = first.closest('.form-group')?.querySelector('.form-error');
-                if (err) err.textContent = 'Informe ao menos um equipamento.';
+                setFieldError(first, 'Informe ao menos um equipamento.');
             }
         }
 
+        if (!formularioCompleto()) valid = false;
+
+        updateSubmitButton();
         return valid;
     }
 
@@ -236,6 +365,36 @@
         });
 
         updateSummary();
+        CAMPOS_COM_PRECO.forEach((name) => {
+            const field = form.querySelector(`[name="${name}"]`);
+            if (field) validarPrecoSelect(field, true);
+        });
+        updateSubmitButton();
+    }
+
+    function bindConfigFields() {
+        CAMPOS_OBRIGATORIOS.forEach((name) => {
+            const field = form?.querySelector(`[name="${name}"]`);
+            if (!field) return;
+
+            field.addEventListener('input', updateSubmitButton);
+            field.addEventListener('change', () => {
+                if (CAMPOS_COM_PRECO.includes(name)) {
+                    validarPrecoSelect(field, true);
+                } else {
+                    validateField(field);
+                }
+                updateSubmitButton();
+            });
+            field.addEventListener('blur', () => {
+                if (CAMPOS_COM_PRECO.includes(name)) {
+                    validarPrecoSelect(field, true);
+                } else {
+                    validateField(field);
+                }
+                updateSubmitButton();
+            });
+        });
     }
 
     function clearForm() {
@@ -267,6 +426,7 @@
 
         window.__formRestore = null;
         updateSummary();
+        updateSubmitButton();
 
         if (window.history.replaceState) {
             const url = new URL(window.location.href);
@@ -294,15 +454,13 @@
         updateSummary();
     }
 
+    bindConfigFields();
+    updateSubmitButton();
+
     form?.addEventListener('submit', (e) => {
         if (!validateForm()) {
             e.preventDefault();
             form.querySelector('.is-invalid')?.focus();
         }
-    });
-
-    form?.querySelectorAll('select[required], input[required]').forEach((field) => {
-        field.addEventListener('change', () => validateField(field));
-        field.addEventListener('blur', () => validateField(field));
     });
 })();

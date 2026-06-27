@@ -2,6 +2,9 @@
 
 session_start();
 require_once 'database.php';
+require_once __DIR__ . '/includes/validacao_catalogo.php';
+
+$statusPrecos = carregarStatusPrecosFormulario($conn);
 
 $formData = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['limpar_dimensionamento'])) {
@@ -385,14 +388,17 @@ $formRestoreJson = $formData !== null
 
                                 <?php
 
-                                $sql = "SELECT DISTINCT painel FROM placa_solar";
+                                $sql = 'SELECT DISTINCT painel FROM placa_solar ORDER BY painel';
 
                                 $result = $conn->query($sql);
 
                                 while ($row = $result->fetch_assoc()) {
-
-                                    echo "<option value='{$row['painel']}'>{$row['painel']}</option>";
-
+                                    $painel = (string) $row['painel'];
+                                    echo renderOptionComPreco(
+                                        $painel,
+                                        $painel,
+                                        descricaoTemPrecoNoCatalogo($statusPrecos, 'placa_solar', $painel)
+                                    );
                                 }
 
                                 ?>
@@ -441,14 +447,17 @@ $formRestoreJson = $formData !== null
 
                                 <?php
 
-                                $sql = "SELECT DISTINCT bateria_desc FROM bateria";
+                                $sql = 'SELECT DISTINCT bateria_desc FROM bateria ORDER BY bateria_desc';
 
                                 $result = $conn->query($sql);
 
                                 while ($row = $result->fetch_assoc()) {
-
-                                    echo "<option value='{$row['bateria_desc']}'>{$row['bateria_desc']}</option>";
-
+                                    $bateriaDesc = (string) $row['bateria_desc'];
+                                    echo renderOptionComPreco(
+                                        $bateriaDesc,
+                                        $bateriaDesc,
+                                        descricaoTemPrecoNoCatalogo($statusPrecos, 'bateria', $bateriaDesc)
+                                    );
                                 }
 
                                 ?>
@@ -537,14 +546,17 @@ $formRestoreJson = $formData !== null
 
                                 <?php
 
-                                $sql = "SELECT DISTINCT estrutura_desc FROM estrutura_solar";
+                                $sql = 'SELECT DISTINCT estrutura_desc FROM estrutura_solar ORDER BY estrutura_desc';
 
                                 $result = $conn->query($sql);
 
                                 while ($row = $result->fetch_assoc()) {
-
-                                    echo "<option value='{$row['estrutura_desc']}'>{$row['estrutura_desc']}</option>";
-
+                                    $estruturaDesc = (string) $row['estrutura_desc'];
+                                    echo renderOptionComPreco(
+                                        $estruturaDesc,
+                                        $estruturaDesc,
+                                        descricaoTemPrecoNoCatalogo($statusPrecos, 'estrutura_solar', $estruturaDesc)
+                                    );
                                 }
 
                                 ?>
@@ -593,7 +605,7 @@ $formRestoreJson = $formData !== null
 
                         </button>
 
-                        <button type="submit" class="btn btn-primary" id="btnCalcular">
+                        <button type="submit" class="btn btn-primary" id="btnCalcular" disabled>
 
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
 

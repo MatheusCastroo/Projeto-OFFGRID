@@ -318,6 +318,19 @@ body {
     box-shadow: 0 0 0 3px var(--primary-glow), var(--shadow-btn);
 }
 
+.btn-primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-primary:disabled:hover,
+.btn-primary:disabled:active {
+    transform: none;
+    box-shadow: none;
+}
+
 .btn-add {
     width: 100%;
     padding: 0.875rem var(--space-md);

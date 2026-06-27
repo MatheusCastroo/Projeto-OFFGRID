@@ -232,15 +232,35 @@ final class RelatorioPdf
 
     public function adicionarTabela(array $cabecalho, array $linhas, array $larguras): void
     {
-        $alturaLinha = 16.0;
-        $tamanhoFonte = 8.5;
+        $tamanhoFonte = 8.0;
+        $alturaLinhaBase = 13.0;
+        $paddingVertical = 4.0;
+        $larguraUtil = static function (float $larguraColuna): float {
+            return max(12.0, $larguraColuna - 6.0);
+        };
 
-        $this->garantirEspaco($alturaLinha + 4);
-        $this->desenharLinhaTabela($cabecalho, $larguras, $alturaLinha, $tamanhoFonte, true);
+        $alturaCabecalho = $this->calcularAlturaLinhaTabela(
+            $cabecalho,
+            $larguras,
+            $tamanhoFonte,
+            $alturaLinhaBase,
+            $paddingVertical,
+            $larguraUtil
+        );
+        $this->garantirEspaco($alturaCabecalho + 4);
+        $this->desenharLinhaTabela($cabecalho, $larguras, $alturaCabecalho, $tamanhoFonte, true, $paddingVertical, $larguraUtil);
 
         foreach ($linhas as $linha) {
+            $alturaLinha = $this->calcularAlturaLinhaTabela(
+                $linha,
+                $larguras,
+                $tamanhoFonte,
+                $alturaLinhaBase,
+                $paddingVertical,
+                $larguraUtil
+            );
             $this->garantirEspaco($alturaLinha + 2);
-            $this->desenharLinhaTabela($linha, $larguras, $alturaLinha, $tamanhoFonte, false);
+            $this->desenharLinhaTabela($linha, $larguras, $alturaLinha, $tamanhoFonte, false, $paddingVertical, $larguraUtil);
         }
     }
 
@@ -314,24 +334,72 @@ final class RelatorioPdf
         }
     }
 
-    private function desenharLinhaTabela(array $celulas, array $larguras, float $alturaLinha, float $tamanhoFonte, bool $cabecalho): void
-    {
-        $x = $this->margem;
-        $y = $this->cursorY;
+    private function calcularAlturaLinhaTabela(
+        array $celulas,
+        array $larguras,
+        float $tamanhoFonte,
+        float $alturaLinhaBase,
+        float $paddingVertical,
+        callable $larguraUtil
+    ): float {
+        $maxLinhas = 1;
 
         foreach ($celulas as $indice => $texto) {
-            $largura = $larguras[$indice] ?? 80;
-            $fonte = $cabecalho ? '2' : '1';
-            $textoFormatado = $this->truncarTexto((string) $texto, (int) floor($largura / ($tamanhoFonte * 0.45)));
-            $this->paginas[$this->paginaAtual][] = sprintf(
-                "BT /F%s %.2F Tf %.2F %.2F Td (%s) Tj ET",
-                $fonte,
-                $tamanhoFonte,
-                $x + 2,
-                $y - 12,
-                $this->escaparPdf($textoFormatado)
+            $larguraColuna = $larguras[$indice] ?? 80;
+            $linhas = $this->quebrarTextoParaColuna((string) $texto, $larguraUtil((float) $larguraColuna), $tamanhoFonte);
+            $maxLinhas = max($maxLinhas, count($linhas));
+        }
+
+        return ($maxLinhas * $alturaLinhaBase) + ($paddingVertical * 2);
+    }
+
+    private function desenharLinhaTabela(
+        array $celulas,
+        array $larguras,
+        float $alturaLinha,
+        float $tamanhoFonte,
+        bool $cabecalho,
+        float $paddingVertical,
+        callable $larguraUtil
+    ): void {
+        $xInicial = $this->margem;
+        $y = $this->cursorY;
+        $fonte = $cabecalho ? '2' : '1';
+        $alturaLinhaTexto = 13.0;
+        $linhasPorCelula = [];
+
+        foreach ($celulas as $indice => $texto) {
+            $larguraColuna = $larguras[$indice] ?? 80;
+            $linhasPorCelula[$indice] = $this->quebrarTextoParaColuna(
+                (string) $texto,
+                $larguraUtil((float) $larguraColuna),
+                $tamanhoFonte
             );
-            $x += $largura;
+        }
+
+        $maxLinhas = 1;
+        foreach ($linhasPorCelula as $linhas) {
+            $maxLinhas = max($maxLinhas, count($linhas));
+        }
+
+        $x = $xInicial;
+        foreach ($celulas as $indice => $texto) {
+            $larguraColuna = $larguras[$indice] ?? 80;
+            $linhas = $linhasPorCelula[$indice];
+            $yTexto = $y - $paddingVertical - $tamanhoFonte;
+
+            foreach ($linhas as $offsetLinha => $linhaTexto) {
+                $this->paginas[$this->paginaAtual][] = sprintf(
+                    "BT /F%s %.2F Tf %.2F %.2F Td (%s) Tj ET",
+                    $fonte,
+                    $tamanhoFonte,
+                    $x + 3,
+                    $yTexto - ($offsetLinha * $alturaLinhaTexto),
+                    $this->escaparPdf($linhaTexto)
+                );
+            }
+
+            $x += $larguraColuna;
         }
 
         $larguraTotal = array_sum($larguras);
@@ -354,22 +422,107 @@ final class RelatorioPdf
         $this->cursorY -= $alturaLinha;
     }
 
-    private function truncarTexto(string $texto, int $maximo): string
+    private function quebrarTextoParaColuna(string $texto, float $larguraMaxima, float $tamanhoFonte): array
     {
-        if ($maximo < 4) {
-            return $texto;
+        $texto = trim(preg_replace('/\s+/u', ' ', $texto) ?? $texto);
+        if ($texto === '') {
+            return [''];
         }
 
-        if (mb_strlen($texto, 'UTF-8') <= $maximo) {
-            return $texto;
+        if ($this->larguraTexto($texto, $tamanhoFonte) <= $larguraMaxima) {
+            return [$texto];
         }
 
-        return mb_substr($texto, 0, $maximo - 3, 'UTF-8') . '...';
+        $palavras = preg_split('/\s+/u', $texto, -1, PREG_SPLIT_NO_EMPTY) ?: [$texto];
+        $linhas = [];
+        $linhaAtual = '';
+
+        foreach ($palavras as $palavra) {
+            $candidata = $linhaAtual === '' ? $palavra : $linhaAtual . ' ' . $palavra;
+
+            if ($this->larguraTexto($candidata, $tamanhoFonte) <= $larguraMaxima) {
+                $linhaAtual = $candidata;
+                continue;
+            }
+
+            if ($linhaAtual !== '') {
+                $linhas[] = $linhaAtual;
+                $linhaAtual = '';
+            }
+
+            if ($this->larguraTexto($palavra, $tamanhoFonte) <= $larguraMaxima) {
+                $linhaAtual = $palavra;
+                continue;
+            }
+
+            $partes = $this->quebrarPalavraLonga($palavra, $larguraMaxima, $tamanhoFonte);
+            $ultimaParte = array_pop($partes);
+            foreach ($partes as $parte) {
+                $linhas[] = $parte;
+            }
+            $linhaAtual = $ultimaParte ?? '';
+        }
+
+        if ($linhaAtual !== '') {
+            $linhas[] = $linhaAtual;
+        }
+
+        return $linhas !== [] ? $linhas : [''];
+    }
+
+    private function quebrarPalavraLonga(string $palavra, float $larguraMaxima, float $tamanhoFonte): array
+    {
+        $partes = [];
+        $resto = $palavra;
+
+        while ($resto !== '') {
+            $tamanho = mb_strlen($resto, 'UTF-8');
+            $limite = 1;
+
+            for ($i = 1; $i <= $tamanho; $i++) {
+                $pedaco = mb_substr($resto, 0, $i, 'UTF-8');
+                if ($this->larguraTexto($pedaco, $tamanhoFonte) > $larguraMaxima) {
+                    break;
+                }
+                $limite = $i;
+            }
+
+            if ($limite < 1) {
+                $limite = 1;
+            }
+
+            $partes[] = mb_substr($resto, 0, $limite, 'UTF-8');
+            $resto = mb_substr($resto, $limite, null, 'UTF-8');
+        }
+
+        return $partes;
+    }
+
+    private function larguraTexto(string $texto, float $tamanhoFonte): float
+    {
+        $largura = 0.0;
+        $comprimento = mb_strlen($texto, 'UTF-8');
+
+        for ($i = 0; $i < $comprimento; $i++) {
+            $caractere = mb_substr($texto, $i, 1, 'UTF-8');
+
+            if (preg_match('/[ilj\.,;:!|\'`]/u', $caractere)) {
+                $largura += $tamanhoFonte * 0.28;
+            } elseif (preg_match('/[MWwm@%]/u', $caractere)) {
+                $largura += $tamanhoFonte * 0.82;
+            } elseif (preg_match('/[A-Z0-9]/u', $caractere)) {
+                $largura += $tamanhoFonte * 0.62;
+            } else {
+                $largura += $tamanhoFonte * 0.50;
+            }
+        }
+
+        return $largura;
     }
 
     private function escaparPdf(string $texto): string
     {
-        $convertido = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $texto);
+        $convertido = iconv('UTF-8', 'ISO-8859-1//IGNORE', $texto);
         if ($convertido === false) {
             $convertido = $texto;
         }
@@ -389,10 +542,17 @@ function gerarPdf(array $dados): void
 
     $linhasComponentes = [];
     foreach ($dados['componentes'] as $item) {
+        $descricao = trim((string) ($item['descricao'] ?? ''));
+        $nome = trim((string) ($item['nome'] ?? ''));
+        $produto = $descricao !== '' ? $descricao : $nome;
+
+        if ($nome !== '' && $descricao !== '' && mb_stripos($descricao, $nome, 0, 'UTF-8') !== 0) {
+            $produto = $nome . ' — ' . $descricao;
+        }
+
         $linhasComponentes[] = [
             $item['categoria'] ?? '',
-            $item['nome'] ?? '',
-            $item['descricao'] ?? '',
+            $produto,
             (string) ($item['quantidade'] ?? 0),
             formatarPrecoExport(isset($item['preco_unitario']) ? (float) $item['preco_unitario'] : null),
             (string) ($item['sku'] ?? ''),
@@ -401,9 +561,9 @@ function gerarPdf(array $dados): void
 
     $pdf->adicionarTexto('Lista de componentes', 12, true);
     $pdf->adicionarTabela(
-        ['Categoria', 'Componente', 'Descrição', 'Qtd', 'Valor unit.', 'SKU'],
+        ['Categoria', 'Produto', 'Qtd', 'Valor unit.', 'SKU'],
         $linhasComponentes,
-        [70, 75, 150, 35, 75, 55]
+        [78, 252, 40, 82, 63]
     );
 
     $pdf->adicionarEspaco(10);
@@ -436,7 +596,7 @@ function gerarPdf(array $dados): void
     $pdf->adicionarTabela(
         ['Componente', 'Necessário', 'Gerada', 'Unidade'],
         $linhasResumo,
-        [160, 90, 90, 70]
+        [210, 105, 105, 95]
     );
 
     $pdf->enviar('dimensionamento-offgrid-' . date('Y-m-d') . '.pdf');

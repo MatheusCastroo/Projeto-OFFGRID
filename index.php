@@ -4,7 +4,7 @@ session_start();
 require_once 'database.php';
 require_once __DIR__ . '/includes/validacao_catalogo.php';
 
-$statusPrecos = carregarStatusPrecosFormulario($conn);
+$catalogoItens = carregarCatalogoFormulario($conn);
 
 $formData = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['limpar_dimensionamento'])) {
@@ -394,10 +394,10 @@ $formRestoreJson = $formData !== null
 
                                 while ($row = $result->fetch_assoc()) {
                                     $painel = (string) $row['painel'];
-                                    echo renderOptionComPreco(
+                                    echo renderOptionCatalogo(
                                         $painel,
                                         $painel,
-                                        descricaoTemPrecoNoCatalogo($statusPrecos, 'placa_solar', $painel)
+                                        obterStatusItemCatalogo($catalogoItens, 'placa_solar', $painel)
                                     );
                                 }
 
@@ -453,10 +453,10 @@ $formRestoreJson = $formData !== null
 
                                 while ($row = $result->fetch_assoc()) {
                                     $bateriaDesc = (string) $row['bateria_desc'];
-                                    echo renderOptionComPreco(
+                                    echo renderOptionCatalogo(
                                         $bateriaDesc,
                                         $bateriaDesc,
-                                        descricaoTemPrecoNoCatalogo($statusPrecos, 'bateria', $bateriaDesc)
+                                        obterStatusItemCatalogo($catalogoItens, 'bateria', $bateriaDesc)
                                     );
                                 }
 
@@ -552,10 +552,10 @@ $formRestoreJson = $formData !== null
 
                                 while ($row = $result->fetch_assoc()) {
                                     $estruturaDesc = (string) $row['estrutura_desc'];
-                                    echo renderOptionComPreco(
+                                    echo renderOptionCatalogo(
                                         $estruturaDesc,
                                         $estruturaDesc,
-                                        descricaoTemPrecoNoCatalogo($statusPrecos, 'estrutura_solar', $estruturaDesc)
+                                        obterStatusItemCatalogo($catalogoItens, 'estrutura_solar', $estruturaDesc)
                                     );
                                 }
 

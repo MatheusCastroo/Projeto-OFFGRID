@@ -21,7 +21,7 @@
         'estrutura',
     ];
 
-    const CAMPOS_COM_PRECO = [
+    const CAMPOS_CATALOGO = [
         'modelo_placa',
         'modelo_bateria',
         'estrutura',
@@ -130,7 +130,7 @@
         return option?.dataset.temPreco === '0';
     }
 
-    function validarPrecoSelect(select, showMessage = true) {
+    function validarSelectCatalogo(select, showMessage = true) {
         if (!select) return true;
 
         let message = '';
@@ -149,10 +149,26 @@
         return !message;
     }
 
-    function validarTodosPrecos(showMessages = true) {
-        return CAMPOS_COM_PRECO.every((name) => {
+    function validarTodosCatalogos(showMessages = true) {
+        return CAMPOS_CATALOGO.every((name) => {
             const field = form?.querySelector(`[name="${name}"]`);
-            return validarPrecoSelect(field, showMessages);
+            return validarSelectCatalogo(field, showMessages);
+        });
+    }
+
+    function sanitizarSelectsCatalogo() {
+        CAMPOS_CATALOGO.forEach((name) => {
+            const select = form?.querySelector(`[name="${name}"]`);
+            if (!select || !select.value) return;
+
+            const opcaoValida = Array.from(select.options).some(
+                (option) => option.value === select.value && option.value !== ''
+            );
+
+            if (!opcaoValida) {
+                select.selectedIndex = 0;
+                setFieldError(select, '');
+            }
         });
     }
 
@@ -195,8 +211,8 @@
         if (!btnCalcular) return;
 
         const completo = formularioCompleto();
-        const precosOk = validarTodosPrecos(false);
-        const habilitar = completo && precosOk;
+        const catalogoOk = validarTodosCatalogos(false);
+        const habilitar = completo && catalogoOk;
 
         btnCalcular.disabled = !habilitar;
     }
@@ -246,8 +262,8 @@
         const errorEl = group?.querySelector('.form-error');
         let message = '';
 
-        if (field.tagName === 'SELECT' && CAMPOS_COM_PRECO.includes(field.name)) {
-            return validarPrecoSelect(field, true);
+        if (field.tagName === 'SELECT' && CAMPOS_CATALOGO.includes(field.name)) {
+            return validarSelectCatalogo(field, true);
         }
 
         if (field.hasAttribute('required') && !String(field.value).trim()) {
@@ -292,9 +308,9 @@
             if (!validateField(field)) valid = false;
         });
 
-        CAMPOS_COM_PRECO.forEach((name) => {
+        CAMPOS_CATALOGO.forEach((name) => {
             const field = form.querySelector(`[name="${name}"]`);
-            if (field && !validarPrecoSelect(field, true)) valid = false;
+            if (field && !validarSelectCatalogo(field, true)) valid = false;
         });
 
         const rows = equipList.querySelectorAll('.equip-row');
@@ -365,9 +381,10 @@
         });
 
         updateSummary();
-        CAMPOS_COM_PRECO.forEach((name) => {
+        sanitizarSelectsCatalogo();
+        CAMPOS_CATALOGO.forEach((name) => {
             const field = form.querySelector(`[name="${name}"]`);
-            if (field) validarPrecoSelect(field, true);
+            if (field) validarSelectCatalogo(field, true);
         });
         updateSubmitButton();
     }
@@ -379,16 +396,16 @@
 
             field.addEventListener('input', updateSubmitButton);
             field.addEventListener('change', () => {
-                if (CAMPOS_COM_PRECO.includes(name)) {
-                    validarPrecoSelect(field, true);
+                if (CAMPOS_CATALOGO.includes(name)) {
+                    validarSelectCatalogo(field, true);
                 } else {
                     validateField(field);
                 }
                 updateSubmitButton();
             });
             field.addEventListener('blur', () => {
-                if (CAMPOS_COM_PRECO.includes(name)) {
-                    validarPrecoSelect(field, true);
+                if (CAMPOS_CATALOGO.includes(name)) {
+                    validarSelectCatalogo(field, true);
                 } else {
                     validateField(field);
                 }
@@ -455,6 +472,7 @@
     }
 
     bindConfigFields();
+    sanitizarSelectsCatalogo();
     updateSubmitButton();
 
     form?.addEventListener('submit', (e) => {
